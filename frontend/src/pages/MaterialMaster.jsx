@@ -54,7 +54,7 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get('/api/materials?include_inactive=true');
+      const res = await api.get('/api/materials');
       if (res.success) {
         setMaterials(res.materials || []);
       }
@@ -179,11 +179,11 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
     try {
       const res = await api.delete(`/api/materials/${deleteConfirm.material.material_id}`);
       if (res.success) {
-        setToast({ type: 'success', message: 'Material deactivated successfully.' });
+        setToast({ type: 'success', message: 'Material and all associated stock removed from backend sheet and UI.' });
         fetchMaterials();
       }
     } catch (err) {
-      setToast({ type: 'error', message: err.message || 'Failed to deactivate material.' });
+      setToast({ type: 'error', message: err.message || 'Failed to remove material.' });
     } finally {
       setDeleteConfirm({ isOpen: false, material: null });
     }
@@ -296,11 +296,11 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
       <Toast toast={toast} onClose={() => setToast(null)} />
       <ConfirmDialog
         isOpen={deleteConfirm.isOpen}
-        title="Deactivate Material"
-        message={`Are you sure you want to deactivate "${deleteConfirm.material?.material_name}"?`}
+        title="Deactivate & Remove Material"
+        message={`Are you sure you want to deactivate and remove "${deleteConfirm.material?.material_name}"? This will permanently remove the material and all its stock records from the backend sheet and UI.`}
         onConfirm={handleDelete}
         onCancel={() => setDeleteConfirm({ isOpen: false, material: null })}
-        confirmText="Deactivate"
+        confirmText="Yes, Remove Material & Stock"
         confirmVariant="danger"
       />
 

@@ -15,15 +15,14 @@ materials_bp = Blueprint("materials", __name__)
 
 @materials_bp.route("", methods=["GET"])
 def get_materials():
-    """Returns all materials with optional type filter (Standard or Rare)."""
+    """Returns all active materials with optional type filter (Standard or Rare). Deactivated materials are excluded."""
     type_filter = request.args.get("type")
-    include_inactive = request.args.get("include_inactive", "false").lower() == "true"
 
     rows = sheets_client.read_rows("Material_Master")
     results = []
     for r in rows:
         is_active = r.get("is_active") in ("TRUE", "True", True, "1")
-        if not include_inactive and not is_active:
+        if not is_active:
             continue
 
         if type_filter and r.get("material_type") != type_filter:
@@ -222,6 +221,23 @@ def update_material(current_user, material_id):
     if not target:
         return jsonify({"success": False, "error": "Material not found."}), 404
 
+    # If deactivate requested via update, delete material and all its stock from sheet and UI
+    if "is_active" in data and not data["is_active"]:
+        sheets_client.delete_row_by_id("Material_Master", "material_id", material_id)
+        deleted_stock = sheets_client.delete_rows_by_condition("Material_Stock", "material_id", material_id)
+        record_audit_log(
+            user_id=current_user["user_id"],
+            action="DEACTIVATE_AND_REMOVE_MATERIAL",
+            record_type="Material_Master",
+            record_id=material_id,
+            old_value=target.get("material_name"),
+            new_value=f"Deactivated: Removed from Material_Master and purged {deleted_stock} stock records from Material_Stock."
+        )
+        return jsonify({
+            "success": True,
+            "message": f"Material '{target.get('material_name')}' deactivated and removed from backend sheet and UI."
+        })
+
     updated = dict(target)
     if "material_name" in data:
         updated["material_name"] = data["material_name"].strip()
@@ -271,29 +287,29 @@ def update_material(current_user, material_id):
 @materials_bp.route("/<material_id>", methods=["DELETE"])
 @director_required
 def delete_material(current_user, material_id):
-    """Director soft deletes a material."""
+    """Director completely removes / deactivates a material and its stock records from backend sheet and UI."""
     materials = sheets_client.read_rows("Material_Master")
-    target = None
-    for m in materials:
-        if m.get("material_id") == material_id:
-            target = m
-            break
+    target = next((m for m in materials if m.get("material_id") == material_id), None)
 
     if not target:
         return jsonify({"success": False, "error": "Material not found."}), 404
 
-    updated = dict(target)
-    updated["is_active"] = "FALSE"
-    updated["updated_at"] = datetime.now(timezone.utc).isoformat()
+    # Purge completely from Material_Master sheet
+    sheets_client.delete_row_by_id("Material_Master", "material_id", material_id)
 
-    sheets_client.update_row_by_id("Material_Master", "material_id", material_id, updated)
+    # Purge all stock records from Material_Stock sheet
+    deleted_stock = sheets_client.delete_rows_by_condition("Material_Stock", "material_id", material_id)
+
     record_audit_log(
         user_id=current_user["user_id"],
-        action="DEACTIVATE_MATERIAL",
+        action="DELETE_MATERIAL_AND_STOCK",
         record_type="Material_Master",
         record_id=material_id,
-        old_value="Active",
-        new_value="Inactive"
+        old_value=target.get("material_name"),
+        new_value=f"Deactivated and removed from Material_Master and deleted {deleted_stock} stock records from Material_Stock."
     )
 
-    return jsonify({"success": True, "message": "Material deactivated successfully."})
+    return jsonify({
+        "success": True,
+        "message": f"Material '{target.get('material_name')}' and all associated stock removed from backend sheet and UI."
+    })

@@ -302,3 +302,43 @@ def configure_initial_stock(current_user):
         "material_id": material_id,
         "initial_stock": qty_num
     })
+
+@stock_bp.route("/clear-all", methods=["POST", "DELETE"])
+@stock_bp.route("", methods=["DELETE"])
+@director_required
+def delete_all_material_stock(current_user):
+    """
+    Director completely purges all material stock entries from the Material_Stock sheet.
+    Resets all inventory stock balances in both Google Sheets and UI.
+    """
+    sheets_client.clear_sheet_data("Material_Stock")
+    record_audit_log(
+        user_id=current_user["user_id"],
+        action="DELETE_ALL_MATERIAL_STOCK",
+        record_type="Material_Stock",
+        record_id="all",
+        new_value="All records in Material_Stock deleted by Director."
+    )
+    return jsonify({
+        "success": True,
+        "message": "All Material stock records successfully deleted from backend sheet and UI."
+    })
+
+@stock_bp.route("/<material_id>", methods=["DELETE"])
+@director_required
+def delete_single_material_stock(current_user, material_id):
+    """
+    Director deletes all stock records for a specific material from Material_Stock.
+    """
+    deleted_count = sheets_client.delete_rows_by_condition("Material_Stock", "material_id", material_id)
+    record_audit_log(
+        user_id=current_user["user_id"],
+        action="DELETE_MATERIAL_STOCK",
+        record_type="Material_Stock",
+        record_id=material_id,
+        new_value=f"Deleted {deleted_count} stock records for material {material_id}."
+    )
+    return jsonify({
+        "success": True,
+        "message": f"Deleted {deleted_count} stock records for material {material_id}."
+    })

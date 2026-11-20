@@ -7,12 +7,15 @@ import {
   PlusCircle,
   History,
   CheckCircle2,
-  X
+  X,
+  Trash2,
+  AlertTriangle
 } from 'lucide-react';
 import DataTable from '../components/DataTable';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
 import Toast from '../components/Toast';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
@@ -35,6 +38,11 @@ export default function MaterialStock() {
   const [initQty, setInitQty] = useState('');
   const [initDate, setInitDate] = useState('2026-11-01');
   const [initSubmitting, setInitSubmitting] = useState(false);
+
+  // Deletion Confirm Dialog States
+  const [clearAllConfirm, setClearAllConfirm] = useState(false);
+  const [deleteSingleConfirm, setDeleteSingleConfirm] = useState({ isOpen: false, material: null });
+  const [deletingStock, setDeletingStock] = useState(false);
 
   const fetchStock = async () => {
     setLoading(true);
@@ -121,6 +129,41 @@ export default function MaterialStock() {
     }
   };
 
+  // Delete all material stock from backend sheet and UI
+  const handleClearAllStock = async () => {
+    setDeletingStock(true);
+    try {
+      const res = await api.delete('/api/stock');
+      if (res.success) {
+        setToast({ type: 'success', message: 'All material stock records deleted from backend sheet and UI.' });
+        fetchStock();
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: err.message || 'Failed to delete material stock.' });
+    } finally {
+      setDeletingStock(false);
+      setClearAllConfirm(false);
+    }
+  };
+
+  // Delete stock for a single material
+  const handleDeleteSingleStock = async () => {
+    if (!deleteSingleConfirm.material) return;
+    setDeletingStock(true);
+    try {
+      const res = await api.delete(`/api/stock/${deleteSingleConfirm.material.material_id}`);
+      if (res.success) {
+        setToast({ type: 'success', message: `Stock for "${deleteSingleConfirm.material.material_name}" removed from backend sheet.` });
+        fetchStock();
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: err.message || 'Failed to delete material stock.' });
+    } finally {
+      setDeletingStock(false);
+      setDeleteSingleConfirm({ isOpen: false, material: null });
+    }
+  };
+
   const columns = [
     { key: 's_no', label: 'S.No', className: 'w-12 text-center' },
     {
@@ -178,13 +221,24 @@ export default function MaterialStock() {
             </button>
           )}
           {isDirector && (
-            <button
-              onClick={() => openAdjustmentModal(row)}
-              className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
-              title="Manual Stock Adjustment"
-            >
-              <Sliders className="w-3.5 h-3.5 text-sky-500" />
-            </button>
+            <>
+              <button
+                onClick={() => openAdjustmentModal(row)}
+                className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
+                title="Manual Stock Adjustment"
+              >
+                <Sliders className="w-3.5 h-3.5 text-sky-500" />
+              </button>
+              {row.is_configured && (
+                <button
+                  onClick={() => setDeleteSingleConfirm({ isOpen: true, material: row })}
+                  className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"
+                  title="Delete Material Stock Record"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </>
           )}
         </div>
       )
@@ -211,6 +265,17 @@ export default function MaterialStock() {
             Formula: Closing Stock = Opening Stock + Stock Received - Sheets Used. Next day's opening stock automatically mirrors closing stock.
           </p>
         </div>
+
+        {/* Director Stock Purge Control */}
+        {isDirector && (
+          <button
+            onClick={() => setClearAllConfirm(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-rose-300 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/30 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40 text-xs font-semibold transition-colors shadow-xs"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete All Material Stock</span>
+          </button>
+        )}
       </div>
 
       {error && <ErrorMessage error={error} onRetry={fetchStock} />}
@@ -258,25 +323,25 @@ export default function MaterialStock() {
                 <input
                   type="number"
                   step="any"
+                  required
                   placeholder="e.g. +10 or -5"
                   value={adjQty}
                   onChange={e => setAdjQty(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono text-sm"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono text-sm"
                 />
               </div>
 
               <div>
                 <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Adjustment Reason (Mandatory Audit Trail)
+                  Adjustment Reason / Audit Justification
                 </label>
                 <textarea
                   rows={2}
-                  placeholder="e.g. Physical stock audit correction, supplier return, damaged sheet disposal..."
+                  required
+                  placeholder="e.g. Physical inventory count variance, damaged sheets scrapped..."
                   value={adjReason}
                   onChange={e => setAdjReason(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 text-xs"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
                 />
               </div>
 
@@ -284,7 +349,7 @@ export default function MaterialStock() {
                 <button
                   type="button"
                   onClick={() => setIsAdjOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium"
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium"
                 >
                   Cancel
                 </button>
@@ -293,7 +358,7 @@ export default function MaterialStock() {
                   disabled={adjSubmitting}
                   className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold shadow-xs disabled:opacity-50"
                 >
-                  {adjSubmitting ? 'Saving...' : 'Apply Stock Adjustment'}
+                  {adjSubmitting ? 'Adjusting...' : 'Save Adjustment'}
                 </button>
               </div>
             </form>
@@ -301,13 +366,13 @@ export default function MaterialStock() {
         </div>
       )}
 
-      {/* Configure Initial Stock Modal */}
+      {/* Initial Stock Configuration Modal */}
       {isInitOpen && selectedMat && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md shadow-xl overflow-hidden p-6 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
               <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                Configure Initial Opening Stock
+                Configure Initial Baseline Stock
               </h3>
               <button onClick={() => setIsInitOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
@@ -315,39 +380,42 @@ export default function MaterialStock() {
             </div>
 
             <form onSubmit={handleInitialStockConfig} className="mt-4 space-y-4 text-xs">
-              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200">
-                <span className="font-semibold block">{selectedMat.material_name}</span>
-                <span className="text-[11px] block mt-0.5">
-                  This material was marked "Not Configured". Setting an opening stock will initialize its inventory ledger.
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
+                <span className="text-slate-400 block text-[10px] uppercase">Material Specification</span>
+                <span className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                  {selectedMat.material_name}
+                </span>
+                <span className="text-amber-500 block text-[11px] mt-0.5">
+                  Currently Unconfigured (Blank Initial Baseline)
                 </span>
               </div>
 
               <div>
                 <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Initial Stock Quantity (Sheets)
+                  Baseline Origin Date
                 </label>
                 <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  placeholder="e.g. 50"
-                  value={initQty}
-                  onChange={e => setInitQty(e.target.value)}
+                  type="date"
                   required
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono text-sm"
+                  value={initDate}
+                  onChange={e => setInitDate(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
                 />
               </div>
 
               <div>
                 <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Baseline Effective Date
+                  Initial Opening Stock Quantity (Sheets)
                 </label>
                 <input
-                  type="date"
-                  value={initDate}
-                  onChange={e => setInitDate(e.target.value)}
+                  type="number"
+                  step="any"
+                  min="0"
                   required
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                  placeholder="e.g. 50"
+                  value={initQty}
+                  onChange={e => setInitQty(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono text-sm"
                 />
               </div>
 
@@ -355,22 +423,44 @@ export default function MaterialStock() {
                 <button
                   type="button"
                   onClick={() => setIsInitOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 hover:bg-slate-100 text-slate-700 dark:text-slate-300 font-medium"
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={initSubmitting}
-                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold shadow-xs disabled:opacity-50"
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-white font-semibold shadow-xs disabled:opacity-50"
                 >
-                  {initSubmitting ? 'Saving...' : 'Confirm Initial Stock'}
+                  {initSubmitting ? 'Saving...' : 'Set Initial Stock'}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+
+      {/* Confirm Dialog for Delete All Material Stock */}
+      <ConfirmDialog
+        isOpen={clearAllConfirm}
+        title="Delete All Material Stock"
+        message="Are you sure you want to delete all material stock records from the Material_Stock sheet? This will clear all stock balances to unconfigured/empty in both Google Sheets and the UI."
+        onConfirm={handleClearAllStock}
+        onCancel={() => setClearAllConfirm(false)}
+        confirmText={deletingStock ? "Deleting..." : "Yes, Delete All Stock"}
+        confirmVariant="danger"
+      />
+
+      {/* Confirm Dialog for Single Material Stock Delete */}
+      <ConfirmDialog
+        isOpen={deleteSingleConfirm.isOpen}
+        title="Delete Stock Record"
+        message={`Are you sure you want to delete all stock records for "${deleteSingleConfirm.material?.material_name}" from the Material_Stock sheet?`}
+        onConfirm={handleDeleteSingleStock}
+        onCancel={() => setDeleteSingleConfirm({ isOpen: false, material: null })}
+        confirmText={deletingStock ? "Deleting..." : "Yes, Delete Stock"}
+        confirmVariant="danger"
+      />
     </div>
   );
 }

@@ -170,3 +170,58 @@ def test_clear_existing_data_endpoint(client):
     # Verify Daily Entries is now completely empty
     res_entries = client.get("/api/entries", headers={"Authorization": f"Bearer {dir_token}"})
     assert len(res_entries.get_json()["entries"]) == 0
+
+def test_delete_material_removes_from_sheet_and_stock(client):
+    """
+    Test requirement: If deactivate / delete material, it should be removed
+    from the UI and also from the backend sheet (Material_Master and Material_Stock).
+    """
+    dir_token = get_auth_token(client)
+    headers = {"Authorization": f"Bearer {dir_token}"}
+
+    # 1. Create a test material with stock
+    res = client.post("/api/materials", json={
+        "material_name": "Temporary Test Material 101",
+        "category": "CRCA",
+        "material_type": "Rare",
+        "length_mm": 1250,
+        "width_mm": 2500,
+        "thickness_mm": 1.0,
+        "density_coefficient": 0.00000785,
+        "opening_stock": 25
+    }, headers=headers)
+    assert res.status_code == 201
+    mat_id = res.get_json()["material"]["material_id"]
+
+    # Verify it exists in Material_Master and Material_Stock
+    res_mats = client.get("/api/materials")
+    assert any(m["material_id"] == mat_id for m in res_mats.get_json()["materials"])
+
+    stock_rows = sheets_client.read_rows("Material_Stock")
+    assert any(s.get("material_id") == mat_id for s in stock_rows)
+
+    # 2. Delete / deactivate material
+    del_res = client.delete(f"/api/materials/{mat_id}", headers=headers)
+    assert del_res.status_code == 200
+
+    # 3. Verify completely removed from Material_Master
+    res_mats_after = client.get("/api/materials")
+    assert not any(m["material_id"] == mat_id for m in res_mats_after.get_json()["materials"])
+
+    # 4. Verify stock completely removed from Material_Stock
+    stock_rows_after = sheets_client.read_rows("Material_Stock")
+    assert not any(s.get("material_id") == mat_id for s in stock_rows_after)
+
+def test_delete_all_material_stock(client):
+    """
+    Test requirement: Director can delete all material stock records.
+    """
+    dir_token = get_auth_token(client)
+    headers = {"Authorization": f"Bearer {dir_token}"}
+
+    res = client.delete("/api/stock", headers=headers)
+    assert res.status_code == 200
+
+    # Verify Material_Stock sheet is now empty
+    stock_rows = sheets_client.read_rows("Material_Stock")
+    assert len(stock_rows) == 0

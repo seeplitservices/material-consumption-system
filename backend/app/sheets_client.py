@@ -78,22 +78,8 @@ class SheetsClient:
             }
             self._mock_data["Material_Master"].append(mat_record)
 
-            # Seed clean baseline stock into unified Material_Stock
-            stock_val = mat.get("initial_stock")
-            stock_entry = {
-                "stock_id": f"INIT-{mat['material_id']}",
-                "date": Config.BASELINE_DATE,
-                "material_id": mat["material_id"],
-                "material_name": mat["material_name"],
-                "opening_stock": stock_val if stock_val is not None else "Not Configured",
-                "stock_received": 0,
-                "punching_stock": 0,
-                "closing_stock": stock_val if stock_val is not None else "Not Configured",
-                "remarks": "Initial Baseline Stock",
-                "updated_by": "System Director",
-                "updated_at": now
-            }
-            self._mock_data["Material_Stock"].append(stock_entry)
+            # Stock starts clean and unseeded as requested
+            pass
 
         # 3. Seed Director and Data Entry Operator accounts
         director_pass = generate_password_hash("Director@123")
@@ -550,5 +536,107 @@ class SheetsClient:
         except Exception as e:
             logger.error("Error deleting row in Google Sheets (%s): %s", sheet_name, e)
             return removed_mock
+
+    def delete_rows_by_condition(self, sheet_name: str, id_field: str, id_val: str) -> int:
+        """Deletes all rows matching id_field == id_val in the specified sheet."""
+        if sheet_name not in SHEET_SCHEMAS:
+            raise ValueError(f"Unknown sheet: {sheet_name}")
+
+        self.invalidate_cache(sheet_name)
+
+        before_len = len(self._mock_data.get(sheet_name, []))
+        self._mock_data[sheet_name] = [
+            item for item in self._mock_data.get(sheet_name, [])
+            if str(item.get(id_field)) != str(id_val)
+        ]
+        deleted_count = before_len - len(self._mock_data[sheet_name])
+
+        if not self.is_connected or not self.service:
+            return deleted_count
+
+        try:
+            metadata = self._execute_with_retry(
+                lambda: self.service.spreadsheets().get(spreadsheetId=self.spreadsheet_id).execute()
+            )
+            sheet_id = None
+            for s in metadata.get('sheets', []):
+                if s['properties']['title'] == sheet_name:
+                    sheet_id = s['properties']['sheetId']
+                    break
+
+            if sheet_id is None:
+                return deleted_count
+
+            result = self._execute_with_retry(
+                lambda: self.service.spreadsheets().values().get(
+                    spreadsheetId=self.spreadsheet_id,
+                    range=f"{sheet_name}!A:Z"
+                ).execute()
+            )
+            rows = result.get('values', [])
+            if not rows or len(rows) <= 1:
+                return deleted_count
+
+            header_row = rows[0]
+            if id_field not in header_row:
+                return deleted_count
+            id_col_idx = header_row.index(id_field)
+
+            # Collect 0-based row indices to delete (in reverse order to avoid shifting)
+            indices_to_delete = []
+            for idx, r in enumerate(rows[1:], start=1):
+                if len(r) > id_col_idx and str(r[id_col_idx]) == str(id_val):
+                    indices_to_delete.append(idx)
+
+            indices_to_delete.sort(reverse=True)
+            requests = [
+                {
+                    "deleteDimension": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "dimension": "ROWS",
+                            "startIndex": row_idx,
+                            "endIndex": row_idx + 1
+                        }
+                    }
+                }
+                for row_idx in indices_to_delete
+            ]
+
+            if requests:
+                self._execute_with_retry(
+                    lambda: self.service.spreadsheets().batchUpdate(
+                        spreadsheetId=self.spreadsheet_id,
+                        body={"requests": requests}
+                    ).execute()
+                )
+
+            return len(indices_to_delete)
+        except Exception as e:
+            logger.error("Error batch deleting rows in Google Sheets (%s): %s", sheet_name, e)
+            return deleted_count
+
+    def clear_sheet_data(self, sheet_name: str) -> bool:
+        """Clears all data rows in the sheet, leaving only the header row intact."""
+        if sheet_name not in SHEET_SCHEMAS:
+            raise ValueError(f"Unknown sheet: {sheet_name}")
+
+        self.invalidate_cache(sheet_name)
+        self._mock_data[sheet_name] = []
+
+        if not self.is_connected or not self.service:
+            return True
+
+        try:
+            self._execute_with_retry(
+                lambda: self.service.spreadsheets().values().clear(
+                    spreadsheetId=self.spreadsheet_id,
+                    range=f"{sheet_name}!A2:Z"
+                ).execute()
+            )
+            return True
+        except Exception as e:
+            logger.error("Error clearing sheet data in Google Sheets (%s): %s", sheet_name, e)
+            return False
 
 sheets_client = SheetsClient()
