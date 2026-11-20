@@ -639,4 +639,93 @@ class SheetsClient:
             logger.error("Error clearing sheet data in Google Sheets (%s): %s", sheet_name, e)
             return False
 
+    def restore_standard_materials(self) -> int:
+        """
+        Restores all 12 preconfigured factory standard materials in Material_Master with is_active='TRUE'.
+        If a material exists (even if inactive), it ensures is_active is 'TRUE'.
+        If it does not exist, it inserts the preconfigured material specifications.
+        """
+        now = datetime.now(timezone.utc).isoformat()
+        self.invalidate_cache("Material_Master")
+
+        # 1. Update/Restore in mock storage
+        existing_mock = self._mock_data.get("Material_Master", [])
+        mock_map = {m.get("material_id"): m for m in existing_mock}
+
+        for mat in PRECONFIGURED_MATERIALS:
+            mid = mat["material_id"]
+            if mid in mock_map:
+                mock_map[mid]["is_active"] = "TRUE"
+                mock_map[mid]["material_name"] = mat["material_name"]
+                mock_map[mid]["category"] = mat["category"]
+                mock_map[mid]["material_type"] = "Standard"
+                mock_map[mid]["length_mm"] = mat["length_mm"]
+                mock_map[mid]["width_mm"] = mat["width_mm"]
+                mock_map[mid]["thickness_mm"] = mat["thickness_mm"]
+                mock_map[mid]["density_coefficient"] = mat["density_coefficient"]
+                mock_map[mid]["weight_per_sheet"] = mat["weight_per_sheet"]
+                mock_map[mid]["unit"] = mat["unit"]
+                mock_map[mid]["updated_at"] = now
+            else:
+                mat_record = {
+                    "material_id": mat["material_id"],
+                    "material_name": mat["material_name"],
+                    "category": mat["category"],
+                    "material_type": "Standard",
+                    "length_mm": mat["length_mm"],
+                    "width_mm": mat["width_mm"],
+                    "thickness_mm": mat["thickness_mm"],
+                    "density_coefficient": mat["density_coefficient"],
+                    "weight_per_sheet": mat["weight_per_sheet"],
+                    "unit": mat["unit"],
+                    "is_active": "TRUE",
+                    "created_at": now,
+                    "updated_at": now
+                }
+                self._mock_data["Material_Master"].append(mat_record)
+
+        # 2. Update/Restore in Google Sheets if connected
+        if self.is_connected and self.service and self.spreadsheet_id:
+            try:
+                sheet_rows = self.read_rows("Material_Master")
+                sheet_map = {r.get("material_id"): r for r in sheet_rows}
+                for mat in PRECONFIGURED_MATERIALS:
+                    mid = mat["material_id"]
+                    if mid in sheet_map:
+                        updated_rec = dict(sheet_map[mid])
+                        updated_rec["is_active"] = "TRUE"
+                        updated_rec["material_name"] = mat["material_name"]
+                        updated_rec["category"] = mat["category"]
+                        updated_rec["material_type"] = "Standard"
+                        updated_rec["length_mm"] = mat["length_mm"]
+                        updated_rec["width_mm"] = mat["width_mm"]
+                        updated_rec["thickness_mm"] = mat["thickness_mm"]
+                        updated_rec["density_coefficient"] = mat["density_coefficient"]
+                        updated_rec["weight_per_sheet"] = mat["weight_per_sheet"]
+                        updated_rec["unit"] = mat["unit"]
+                        updated_rec["updated_at"] = now
+                        self.update_row_by_id("Material_Master", "material_id", mid, updated_rec)
+                    else:
+                        new_rec = {
+                            "material_id": mat["material_id"],
+                            "material_name": mat["material_name"],
+                            "category": mat["category"],
+                            "material_type": "Standard",
+                            "length_mm": mat["length_mm"],
+                            "width_mm": mat["width_mm"],
+                            "thickness_mm": mat["thickness_mm"],
+                            "density_coefficient": mat["density_coefficient"],
+                            "weight_per_sheet": mat["weight_per_sheet"],
+                            "unit": mat["unit"],
+                            "is_active": "TRUE",
+                            "created_at": now,
+                            "updated_at": now
+                        }
+                        self.append_row("Material_Master", new_rec)
+            except Exception as e:
+                logger.error("Error restoring standard materials in Google Sheets: %s", e)
+
+        self.invalidate_cache("Material_Master")
+        return len(PRECONFIGURED_MATERIALS)
+
 sheets_client = SheetsClient()

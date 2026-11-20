@@ -14,6 +14,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import Toast from '../components/Toast';
+import { STANDARD_MATERIALS_FALLBACK } from '../utils/standardMaterials';
 
 export default function DailyEntry({ onSaved }) {
   const { user } = useAuth();
@@ -25,8 +26,8 @@ export default function DailyEntry({ onSaved }) {
   const [employeeName, setEmployeeName] = useState(user?.name || '');
   const [generalRemarks, setGeneralRemarks] = useState('');
 
-  // Available Materials Cache & Unified Stock Balances
-  const [materials, setMaterials] = useState([]);
+  // Available Materials Cache & Unified Stock Balances (initialized with fallback standard materials)
+  const [materials, setMaterials] = useState(STANDARD_MATERIALS_FALLBACK);
   const [stockBalances, setStockBalances] = useState({});
   const [loadingMats, setLoadingMats] = useState(false);
 
@@ -81,7 +82,21 @@ export default function DailyEntry({ onSaved }) {
         api.get('/api/stock')
       ]);
 
-      if (matRes.success) setMaterials(matRes.materials || []);
+      if (matRes.success && matRes.materials && matRes.materials.length > 0) {
+        setMaterials(matRes.materials);
+      } else {
+        // Auto-restore default materials if empty
+        try {
+          const restoreRes = await api.post('/api/materials/restore-defaults');
+          if (restoreRes.success && restoreRes.materials && restoreRes.materials.length > 0) {
+            setMaterials(restoreRes.materials);
+          } else {
+            setMaterials(STANDARD_MATERIALS_FALLBACK);
+          }
+        } catch {
+          setMaterials(STANDARD_MATERIALS_FALLBACK);
+        }
+      }
 
       const balanceMap = {};
       if (stockRes.success && stockRes.stock) {
@@ -95,6 +110,37 @@ export default function DailyEntry({ onSaved }) {
       setStockBalances(balanceMap);
     } catch (err) {
       setToast({ type: 'error', message: `Failed to load stock data: ${err.message}` });
+      setMaterials(prev => (prev && prev.length > 0 ? prev : STANDARD_MATERIALS_FALLBACK));
+    } finally {
+      setLoadingMats(false);
+    }
+  };
+
+  // Restore standard materials manually on demand
+  const handleRestoreMaterials = async () => {
+    setLoadingMats(true);
+    try {
+      const res = await api.post('/api/materials/restore-defaults');
+      if (res.success) {
+        setMaterials(res.materials || STANDARD_MATERIALS_FALLBACK);
+        setToast({
+          type: 'success',
+          message: res.message || 'All standard factory materials restored successfully!'
+        });
+        const stockRes = await api.get('/api/stock');
+        if (stockRes.success && stockRes.stock) {
+          const balanceMap = {};
+          stockRes.stock.forEach(item => {
+            balanceMap[item.material_id] = {
+              closing_stock: item.closing_stock,
+              is_configured: item.is_configured
+            };
+          });
+          setStockBalances(balanceMap);
+        }
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: err.message || 'Failed to restore standard materials.' });
     } finally {
       setLoadingMats(false);
     }
@@ -256,7 +302,9 @@ export default function DailyEntry({ onSaved }) {
       return;
     }
 
-    const selectedMat = materials.find(m => m.material_id === matId);
+    const availablePool = materials.length > 0 ? materials : STANDARD_MATERIALS_FALLBACK;
+    const selectedMat = availablePool.find(m => m.material_id === matId) ||
+      STANDARD_MATERIALS_FALLBACK.find(m => m.material_id === matId);
     if (!selectedMat) return;
 
     const balanceInfo = stockBalances[matId] || { closing_stock: 0, is_configured: false };
@@ -499,18 +547,30 @@ export default function DailyEntry({ onSaved }) {
 
         {/* Dynamic Multi-Row Entry Table */}
         <div className="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               Material Punching Rows ({rows.length})
             </h3>
-            <button
-              type="button"
-              onClick={handleAddRow}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-800 dark:text-slate-100 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Material Row</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleRestoreMaterials}
+                disabled={loadingMats}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 transition-colors shadow-xs"
+                title="Restore all preconfigured factory standard materials in Google Sheets & dropdown"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${loadingMats ? 'animate-spin' : ''}`} />
+                <span>Restore Standard Materials</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleAddRow}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-800 dark:text-slate-100 transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Material Row</span>
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -548,10 +608,10 @@ export default function DailyEntry({ onSaved }) {
                         <option value="__NEW_RARE__" className="font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950">
                           ✨ + Add New / Rare Material...
                         </option>
-                        <optgroup label="Available Materials">
-                          {materials.map(m => (
+                        <optgroup label="Available Factory Materials">
+                          {(materials && materials.length > 0 ? materials : STANDARD_MATERIALS_FALLBACK).map(m => (
                             <option key={m.material_id} value={m.material_id}>
-                              {m.material_name} ({m.thickness_mm || '-'}mm &bull; {m.weight_per_sheet_display}kg) {m.material_type === 'Rare' ? '[Rare]' : ''}
+                              {m.material_name} ({m.thickness_mm || '-'}mm &bull; {m.weight_per_sheet_display || (m.weight_per_sheet ? Number(m.weight_per_sheet).toFixed(2) : '-')}kg) {m.material_type === 'Rare' ? '[Rare]' : ''}
                             </option>
                           ))}
                         </optgroup>

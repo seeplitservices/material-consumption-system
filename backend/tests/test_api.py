@@ -225,3 +225,34 @@ def test_delete_all_material_stock(client):
     # Verify Material_Stock sheet is now empty
     stock_rows = sheets_client.read_rows("Material_Stock")
     assert len(stock_rows) == 0
+
+def test_restore_default_materials(client):
+    """
+    Test requirement: Materials can be restored and auto-recovered if removed,
+    ensuring all 12 preconfigured factory standard materials are present.
+    """
+    dir_token = get_auth_token(client)
+    headers = {"Authorization": f"Bearer {dir_token}"}
+
+    # Delete all standard materials from mock data to simulate accidental purge
+    sheets_client._mock_data["Material_Master"] = []
+    sheets_client.invalidate_cache("Material_Master")
+
+    # 1. GET /api/materials should auto-restore them
+    res = client.get("/api/materials")
+    assert res.status_code == 200
+    mats = res.get_json()["materials"]
+    assert len(mats) == 12
+    assert any(m["material_id"] == "MAT-01" for m in mats)
+    assert any("CRCA" in m["material_name"] for m in mats)
+
+    # 2. Test explicit POST /api/materials/restore-defaults
+    sheets_client._mock_data["Material_Master"] = []
+    sheets_client.invalidate_cache("Material_Master")
+
+    res_post = client.post("/api/materials/restore-defaults", headers=headers)
+    assert res_post.status_code == 200
+    data = res_post.get_json()
+    assert data["success"] is True
+    assert len(data["materials"]) == 12
+

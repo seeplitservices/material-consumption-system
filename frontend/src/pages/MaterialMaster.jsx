@@ -9,7 +9,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   X,
-  Filter
+  Filter,
+  RotateCcw
 } from 'lucide-react';
 import DataTable from '../components/DataTable';
 import Loading from '../components/Loading';
@@ -60,6 +61,27 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
       }
     } catch (err) {
       setError(err.message || 'Failed to load materials.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRestoreDefaults = async () => {
+    setLoading(true);
+    try {
+      const res = await api.post('/api/materials/restore-defaults');
+      if (res.success) {
+        setMaterials(res.materials || []);
+        setToast({
+          type: 'success',
+          message: res.message || 'All 12 standard factory materials restored successfully!'
+        });
+      }
+    } catch (err) {
+      setToast({
+        type: 'error',
+        message: err.message || 'Failed to restore default materials.'
+      });
     } finally {
       setLoading(false);
     }
@@ -325,13 +347,24 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
           </button>
 
           {isDirector && (
-            <button
-              onClick={() => openAddModal('Standard')}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Add Standard Material</span>
-            </button>
+            <>
+              <button
+                onClick={handleRestoreDefaults}
+                disabled={loading}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-xs"
+                title="Restore all 12 preconfigured factory standard materials in Google Sheets and ledger"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                <span>Restore Standard Materials</span>
+              </button>
+              <button
+                onClick={() => openAddModal('Standard')}
+                className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                <span>+ Add Standard Material</span>
+              </button>
+            </>
           )}
         </div>
       </div>

@@ -51,7 +51,81 @@ def get_materials():
             "updated_at": r.get("updated_at")
         })
 
+    # Auto-recovery: If standard materials were removed or missing, automatically restore them
+    if not type_filter or type_filter == "Standard":
+        has_standard = any(m.get("material_type") == "Standard" for m in results)
+        if not has_standard:
+            sheets_client.restore_standard_materials()
+            rows = sheets_client.read_rows("Material_Master")
+            results = []
+            for r in rows:
+                is_active = r.get("is_active") in ("TRUE", "True", True, "1")
+                if not is_active:
+                    continue
+                if type_filter and r.get("material_type") != type_filter:
+                    continue
+                try:
+                    wt = float(r.get("weight_per_sheet", 0))
+                except (ValueError, TypeError):
+                    wt = 0.0
+                results.append({
+                    "material_id": r.get("material_id"),
+                    "material_name": r.get("material_name"),
+                    "category": r.get("category"),
+                    "material_type": r.get("material_type", "Standard"),
+                    "length_mm": float(r.get("length_mm")) if r.get("length_mm") else None,
+                    "width_mm": float(r.get("width_mm")) if r.get("width_mm") else None,
+                    "thickness_mm": float(r.get("thickness_mm")) if r.get("thickness_mm") else None,
+                    "density_coefficient": float(r.get("density_coefficient")) if r.get("density_coefficient") else None,
+                    "weight_per_sheet": wt,
+                    "weight_per_sheet_display": round_display(wt),
+                    "is_manual_weight": r.get("is_manual_weight") in ("TRUE", "True", True, "1"),
+                    "unit": r.get("unit", "Sheets"),
+                    "is_active": is_active,
+                    "created_at": r.get("created_at"),
+                    "updated_at": r.get("updated_at")
+                })
+
     return jsonify({"success": True, "count": len(results), "materials": results})
+
+@materials_bp.route("/restore-defaults", methods=["POST"])
+@materials_bp.route("/restore", methods=["POST"])
+def restore_default_materials():
+    """Restores all 12 preconfigured standard materials into Material_Master and returns the active material list."""
+    count = sheets_client.restore_standard_materials()
+    rows = sheets_client.read_rows("Material_Master")
+    results = []
+    for r in rows:
+        is_active = r.get("is_active") in ("TRUE", "True", True, "1")
+        if not is_active:
+            continue
+        try:
+            wt = float(r.get("weight_per_sheet", 0))
+        except (ValueError, TypeError):
+            wt = 0.0
+        results.append({
+            "material_id": r.get("material_id"),
+            "material_name": r.get("material_name"),
+            "category": r.get("category"),
+            "material_type": r.get("material_type", "Standard"),
+            "length_mm": float(r.get("length_mm")) if r.get("length_mm") else None,
+            "width_mm": float(r.get("width_mm")) if r.get("width_mm") else None,
+            "thickness_mm": float(r.get("thickness_mm")) if r.get("thickness_mm") else None,
+            "density_coefficient": float(r.get("density_coefficient")) if r.get("density_coefficient") else None,
+            "weight_per_sheet": wt,
+            "weight_per_sheet_display": round_display(wt),
+            "is_manual_weight": r.get("is_manual_weight") in ("TRUE", "True", True, "1"),
+            "unit": r.get("unit", "Sheets"),
+            "is_active": is_active,
+            "created_at": r.get("created_at"),
+            "updated_at": r.get("updated_at")
+        })
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully restored {count} standard factory sheet materials into Google Sheets and UI dropdown.",
+        "materials": results
+    })
 
 @materials_bp.route("/<material_id>", methods=["GET"])
 def get_material_by_id(material_id):
