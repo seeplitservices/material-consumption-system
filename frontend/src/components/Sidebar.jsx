@@ -44,16 +44,18 @@ export default function Sidebar({ currentPage, onNavigate, collapsed, onToggleCo
         bg-slate-900 border-slate-800 text-slate-300`}
     >
       {/* Brand Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-slate-800 bg-slate-950/40">
-        <div className="flex items-center gap-3 overflow-hidden">
-          <div className="p-2 rounded-lg bg-sky-500/10 text-sky-400 border border-sky-500/20 shrink-0">
-            <Factory className="w-5 h-5" />
+      <div className="h-16 flex items-center justify-between px-3 border-b border-slate-800 bg-slate-950/40">
+        <div className="flex items-center gap-2.5 overflow-hidden">
+          <div className="bg-white rounded-lg p-1 shrink-0 flex items-center justify-center border border-slate-700 shadow-sm w-9 h-9 overflow-hidden">
+            <img src="/logo.jpg" alt="Saravanan Logo" className="w-full h-full object-contain" />
           </div>
           {!collapsed && (
             <div className="flex flex-col truncate">
-              <span className="font-bold text-sm text-slate-100 tracking-tight">MCWMS</span>
-              <span className="text-[11px] text-slate-400 font-medium truncate">
-                {isDirector ? 'Executive Portal' : 'Operator Entry Portal'}
+              <span className="font-bold text-xs text-slate-100 tracking-tight leading-tight truncate">
+                SARAVANAN
+              </span>
+              <span className="text-[10px] text-slate-400 font-medium truncate leading-tight">
+                {isDirector ? 'Executive Portal' : 'Operator Portal'}
               </span>
             </div>
           )}
