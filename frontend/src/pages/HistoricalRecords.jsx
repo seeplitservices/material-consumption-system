@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
 export default function HistoricalRecords() {
-  const { isAdmin } = useAuth();
+  const { isDirector } = useAuth();
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -17,7 +17,6 @@ export default function HistoricalRecords() {
   // Filters
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [sideFilter, setSideFilter] = useState('All');
 
   // Edit Modal State
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -34,8 +33,7 @@ export default function HistoricalRecords() {
     try {
       const params = new URLSearchParams({
         ...(startDate ? { start_date: startDate } : {}),
-        ...(endDate ? { end_date: endDate } : {}),
-        ...(sideFilter !== 'All' ? { side: sideFilter } : {})
+        ...(endDate ? { end_date: endDate } : {})
       });
       const res = await api.get(`/api/entries?${params.toString()}`);
       if (res.success) {
@@ -50,7 +48,7 @@ export default function HistoricalRecords() {
 
   useEffect(() => {
     fetchEntries();
-  }, [startDate, endDate, sideFilter]);
+  }, [startDate, endDate]);
 
   const openEditModal = (entry) => {
     setSelectedEntry(entry);
@@ -91,19 +89,6 @@ export default function HistoricalRecords() {
     { key: 'entry_id', label: 'Entry ID', className: 'w-24 font-mono text-[11px] text-slate-500' },
     { key: 'entry_date', label: 'Date', className: 'w-24 font-mono text-xs' },
     {
-      key: 'side',
-      label: 'Side',
-      render: val => (
-        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-          val === 'Left'
-            ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
-            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-        }`}>
-          {val}
-        </span>
-      )
-    },
-    {
       key: 'job_number',
       label: 'Job / Shift',
       render: (val, row) => (
@@ -115,7 +100,7 @@ export default function HistoricalRecords() {
     },
     { key: 'material_name', label: 'Material', render: val => <span className="font-medium text-xs">{val}</span> },
     { key: 'opening_stock_display', label: 'Opening', render: val => <span className="font-mono text-xs text-slate-500">{val}</span> },
-    { key: 'used_quantity_display', label: 'Used', render: val => <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-xs">{val}</span> },
+    { key: 'used_quantity_display', label: 'Used Sheets', render: val => <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-xs">{val}</span> },
     { key: 'closing_stock_display', label: 'Closing', render: val => <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">{val}</span> },
     { key: 'total_input_weight_display', label: 'Input Wt (kg)', render: val => <span className="font-mono text-xs">{val} kg</span> },
     { key: 'scrap_weight_display', label: 'Scrap Wt (kg)', render: val => <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">{val} kg</span> },
@@ -127,10 +112,10 @@ export default function HistoricalRecords() {
       label: 'Edit',
       sortable: false,
       render: (_, row) => (
-        isAdmin ? (
+        isDirector ? (
           <button
             onClick={() => openEditModal(row)}
-            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 text-slate-600 dark:text-slate-300 transition-colors"
+            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
             title="Edit historical transaction"
           >
             <Edit className="w-3.5 h-3.5 text-sky-500" />
@@ -151,7 +136,7 @@ export default function HistoricalRecords() {
             Historical Material Usage Archive
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Complete transaction ledger stored in Sheet 2: Daily_Entries. All modifications trigger reconciliation and audit logging.
+            Complete transaction ledger stored in Sheet: Daily_Entries. All modifications trigger reconciliation and audit logging.
           </p>
         </div>
 
@@ -175,15 +160,14 @@ export default function HistoricalRecords() {
               className="px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
             />
           </div>
-          <select
-            value={sideFilter}
-            onChange={e => setSideFilter(e.target.value)}
-            className="px-2.5 py-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
-          >
-            <option value="All">All Sides</option>
-            <option value="Left">Left Side Only</option>
-            <option value="Right">Right Side Only</option>
-          </select>
+          {(startDate || endDate) && (
+            <button
+              onClick={() => { setStartDate(''); setEndDate(''); }}
+              className="text-xs text-slate-500 hover:text-slate-800 underline"
+            >
+              Clear Filter
+            </button>
+          )}
         </div>
       </div>
 
@@ -201,96 +185,97 @@ export default function HistoricalRecords() {
         />
       )}
 
-      {/* Edit Historical Entry Modal */}
+      {/* Edit Entry Modal */}
       {isEditOpen && selectedEntry && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md shadow-xl overflow-hidden p-6 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
-              <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                Edit Historical Transaction ({selectedEntry.entry_id})
-              </h3>
-              <button onClick={() => setIsEditOpen(false)} className="text-slate-400 hover:text-slate-600">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+          <div className="w-full max-w-lg bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                  Edit Transaction Record
+                </h3>
+                <p className="text-[11px] text-slate-400 font-mono">
+                  ID: {selectedEntry.entry_id} &bull; Date: {selectedEntry.entry_date}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsEditOpen(false)}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400"
+              >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleEditSubmit} className="mt-4 space-y-4 text-xs">
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 space-y-1">
-                <span className="font-bold text-slate-900 dark:text-slate-100 block">
-                  {selectedEntry.material_name}
-                </span>
-                <span className="text-[11px] text-slate-500 block">
-                  Date: {selectedEntry.entry_date} &bull; Side: {selectedEntry.side} &bull; Opening: {selectedEntry.opening_stock}
-                </span>
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                <span className="font-medium text-slate-600 dark:text-slate-300">Material:</span>
+                <span className="font-bold text-slate-900 dark:text-slate-100">{selectedEntry.material_name}</span>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Used Quantity (Sheets) *
+                    Used / Punching Quantity
                   </label>
                   <input
                     type="number"
-                    step="any"
+                    step="0.01"
                     min="0"
                     value={editUsedQty}
                     onChange={e => setEditUsedQty(e.target.value)}
                     required
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono text-sm"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
                   />
                 </div>
+
                 <div>
                   <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Scrap Weight (kg) *
+                    Scrap Weight (kg)
                   </label>
                   <input
                     type="number"
-                    step="any"
+                    step="0.01"
                     min="0"
                     value={editScrapWt}
                     onChange={e => setEditScrapWt(e.target.value)}
                     required
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono text-sm"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Cutbit Used
+                  Cutbit Used (pieces)
                 </label>
                 <input
                   type="number"
-                  step="any"
+                  step="0.01"
                   min="0"
                   value={editCutbit}
                   onChange={e => setEditCutbit(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono text-sm"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
                 />
               </div>
 
               <div>
                 <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Remarks / Modification Reason
+                  Modification Reason & Remarks
                 </label>
-                <input
-                  type="text"
-                  placeholder="Reason for historical change..."
+                <textarea
                   value={editRemarks}
                   onChange={e => setEditRemarks(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs"
+                  rows={2}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+                  placeholder="Reason for modifying this historical entry..."
                 />
-              </div>
-
-              <div className="p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300">
-                Notice: Modifying this entry will recalculate total input weight, closing stock balance, and register an entry in Sheet 9: Audit_Log.
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsEditOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-600 hover:bg-slate-100 font-medium"
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium"
                 >
                   Cancel
                 </button>
@@ -299,7 +284,7 @@ export default function HistoricalRecords() {
                   disabled={editSubmitting}
                   className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold shadow-xs disabled:opacity-50"
                 >
-                  {editSubmitting ? 'Saving...' : 'Update & Reconcile'}
+                  {editSubmitting ? 'Updating...' : 'Save & Reconcile'}
                 </button>
               </div>
             </form>

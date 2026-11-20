@@ -11,15 +11,13 @@ export default function ScrapAnalysis() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [sideFilter, setSideFilter] = useState('All');
 
   const fetchScrapData = async () => {
     setLoading(true);
     setError(null);
     try {
-      const query = sideFilter !== 'All' ? `?side=${sideFilter}` : '';
       const [recRes, sumRes] = await Promise.all([
-        api.get(`/api/scrap${query}`),
+        api.get('/api/scrap'),
         api.get('/api/scrap/summary')
       ]);
 
@@ -34,24 +32,13 @@ export default function ScrapAnalysis() {
 
   useEffect(() => {
     fetchScrapData();
-  }, [sideFilter]);
+  }, []);
 
   const columns = [
-    { key: 'date', label: 'Date', className: 'w-24 font-mono text-xs' },
-    {
-      key: 'side',
-      label: 'Side',
-      render: val => (
-        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-          val === 'Left'
-            ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
-            : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-        }`}>
-          {val}
-        </span>
-      )
-    },
+    { key: 'date', label: 'Date', className: 'w-28 font-mono text-xs' },
     { key: 'material_name', label: 'Material Specification', render: val => <span className="font-semibold text-xs">{val}</span> },
+    { key: 'sheets_used', label: 'Sheets Used', render: val => <span className="font-mono text-xs font-semibold">{val}</span> },
+    { key: 'weight_per_sheet', label: 'Wt/Sheet (kg)', render: val => <span className="font-mono text-xs text-slate-500">{val} kg</span> },
     { key: 'total_input_weight_display', label: 'Input Wt (kg)', render: val => <span className="font-mono text-xs">{val} kg</span> },
     { key: 'scrap_weight_display', label: 'Scrap Wt (kg)', render: val => <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">{val} kg</span> },
     { key: 'net_consumption_display', label: 'Net Consumed (kg)', render: val => <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs">{val} kg</span> },
@@ -80,61 +67,36 @@ export default function ScrapAnalysis() {
             Formula: Net Consumption = Input Weight - Scrap Weight &bull; Wastage % = (Scrap Weight / Input Weight) × 100
           </p>
         </div>
-
-        {/* Side Selector */}
-        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs">
-          {['All', 'Left', 'Right'].map(s => (
-            <button
-              key={s}
-              onClick={() => setSideFilter(s)}
-              className={`px-3 py-1 font-medium rounded-lg transition-colors ${
-                sideFilter === s
-                  ? 'bg-sky-600 text-white shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-              }`}
-            >
-              {s} Side
-            </button>
-          ))}
-        </div>
       </div>
 
       {error && <ErrorMessage error={error} onRetry={fetchScrapData} />}
 
       {/* Summary KPI Cards */}
       {summary && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <KPICard
             title="Total Scrap Generated"
             value={summary.total_scrap_weight}
             unit="kg"
-            subtitle="Combined Left & Right"
+            subtitle="Factory-wide scrap recorded"
             icon={Trash2}
             color="amber"
-          />
-          <KPICard
-            title="Left Side Scrap"
-            value={summary.left_scrap_weight}
-            unit="kg"
-            subtitle="Left operations"
-            icon={Scale}
-            color="sky"
-          />
-          <KPICard
-            title="Right Side Scrap"
-            value={summary.right_scrap_weight}
-            unit="kg"
-            subtitle="Right operations"
-            icon={Scale}
-            color="emerald"
           />
           <KPICard
             title="Total Input Weight"
             value={summary.total_input_weight}
             unit="kg"
-            subtitle="Gross material sheet weight"
+            subtitle="Gross sheet input weight"
             icon={TrendingUp}
             color="indigo"
+          />
+          <KPICard
+            title="Net Material Consumed"
+            value={summary.net_material_consumption}
+            unit="kg"
+            subtitle="Input Weight - Scrap Weight"
+            icon={Scale}
+            color="emerald"
           />
           <KPICard
             title="Overall Wastage %"

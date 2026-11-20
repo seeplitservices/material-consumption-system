@@ -20,12 +20,12 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
 export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
-  const { isAdmin } = useAuth();
+  const { isDirector } = useAuth();
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
-  const [activeTab, setActiveTab] = useState('all'); // all, Standard, Rare, Left, Right
+  const [activeTab, setActiveTab] = useState('all');
 
   // Add / Edit Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -34,7 +34,6 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
 
   // Form Fields
   const [materialName, setMaterialName] = useState('');
-  const [side, setSide] = useState('Left');
   const [category, setCategory] = useState('CRCA');
   const [materialType, setMaterialType] = useState('Standard');
   const [lengthMm, setLengthMm] = useState('1250');
@@ -70,14 +69,12 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
     fetchMaterials();
   }, []);
 
-  // Sync external rare modal trigger if passed
   useEffect(() => {
     if (isRareModalOpen) {
       openAddModal('Rare');
     }
   }, [isRareModalOpen]);
 
-  // Dynamic live weight preview inside modal
   const l = parseFloat(lengthMm) || 0;
   const w = parseFloat(widthMm) || 0;
   const t = parseFloat(thicknessMm) || 0;
@@ -90,7 +87,6 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
     setIsEditing(false);
     setEditingId(null);
     setMaterialName('');
-    setSide('Left');
     setCategory(type === 'Rare' ? 'Special' : 'CRCA');
     setMaterialType(type);
     setLengthMm('1250');
@@ -109,7 +105,6 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
     setIsEditing(true);
     setEditingId(mat.material_id);
     setMaterialName(mat.material_name);
-    setSide(mat.side);
     setCategory(mat.category);
     setMaterialType(mat.material_type || 'Standard');
     setLengthMm(mat.length_mm ? String(mat.length_mm) : '');
@@ -136,7 +131,6 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
       if (isEditing) {
         const payload = {
           material_name: materialName.trim(),
-          side,
           category,
           length_mm: l,
           width_mm: w,
@@ -154,7 +148,6 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
       } else {
         const payload = {
           material_name: materialName.trim(),
-          side,
           category,
           material_type: materialType,
           length_mm: !isManualWeight ? l : null,
@@ -196,11 +189,9 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
     }
   };
 
-  // Tab filtering
   const filteredMaterials = materials.filter(m => {
     if (activeTab === 'all') return true;
     if (activeTab === 'Standard' || activeTab === 'Rare') return m.material_type === activeTab;
-    if (activeTab === 'Left' || activeTab === 'Right') return m.side === activeTab || m.side === 'Both';
     return true;
   });
 
@@ -227,21 +218,6 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
             <span className="text-[10px] text-slate-400">&bull; {row.category}</span>
           </div>
         </div>
-      )
-    },
-    {
-      key: 'side',
-      label: 'Side',
-      render: val => (
-        <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-          val === 'Left'
-            ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
-            : val === 'Right'
-            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-            : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300'
-        }`}>
-          {val}
-        </span>
       )
     },
     {
@@ -290,7 +266,7 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
       sortable: false,
       render: (_, row) => (
         <div className="flex items-center gap-1.5">
-          {isAdmin && (
+          {isDirector && (
             <>
               <button
                 onClick={() => openEditModal(row)}
@@ -321,7 +297,7 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
       <ConfirmDialog
         isOpen={deleteConfirm.isOpen}
         title="Deactivate Material"
-        message={`Are you sure you want to deactivate "${deleteConfirm.material?.material_name}"? It will no longer appear in future daily entry dropdowns.`}
+        message={`Are you sure you want to deactivate "${deleteConfirm.material?.material_name}"?`}
         onConfirm={handleDelete}
         onCancel={() => setDeleteConfirm({ isOpen: false, material: null })}
         confirmText="Deactivate"
@@ -335,7 +311,7 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
             Material Master Specification Ledger
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Maintain sheet dimensions, thickness, density coefficients, and automatic weight calculations for Left & Right operations.
+            Single unified sheet for factory sheet dimensions, thickness, density coefficients, and automatic weight calculations.
           </p>
         </div>
 
@@ -348,7 +324,7 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
             <span>+ Add Rare Material</span>
           </button>
 
-          {isAdmin && (
+          {isDirector && (
             <button
               onClick={() => openAddModal('Standard')}
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition-colors"
@@ -364,10 +340,8 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
       <div className="flex items-center gap-2 bg-white dark:bg-slate-800 p-1 rounded-xl border border-slate-200 dark:border-slate-700 text-xs w-fit">
         {[
           { id: 'all', label: 'All Materials' },
-          { id: 'Standard', label: 'Standard' },
-          { id: 'Rare', label: 'Rare Materials' },
-          { id: 'Left', label: 'Left Side' },
-          { id: 'Right', label: 'Right Side' }
+          { id: 'Standard', label: 'Standard Materials' },
+          { id: 'Rare', label: 'Rare Materials' }
         ].map(tab => (
           <button
             key={tab.id}
@@ -441,22 +415,7 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Side Operation
-                  </label>
-                  <select
-                    value={side}
-                    onChange={e => setSide(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900"
-                  >
-                    <option value="Left">Left Side</option>
-                    <option value="Right">Right Side</option>
-                    <option value="Both">Both Sides</option>
-                  </select>
-                </div>
-
+              <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
                     Category
@@ -467,8 +426,7 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
                     value={category}
                     onChange={e => setCategory(e.target.value)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900"
-                  >
-                  </input>
+                  />
                 </div>
 
                 <div>
@@ -487,7 +445,6 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
                 </div>
               </div>
 
-              {/* Dimensional vs Manual Weight toggle */}
               <div className="flex items-center gap-2 pt-1">
                 <input
                   type="checkbox"
@@ -569,7 +526,6 @@ export default function MaterialMaster({ isRareModalOpen, onToggleRareModal }) {
                 </div>
               )}
 
-              {/* Dynamic Weight Live Preview Box */}
               <div className="p-3 rounded-xl bg-slate-900 text-white flex items-center justify-between border border-slate-800">
                 <span className="text-slate-300">Computed Unit Weight:</span>
                 <span className="font-bold text-sky-400 text-sm font-mono">

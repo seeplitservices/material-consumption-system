@@ -1,5 +1,6 @@
 """
 Authentication and User Management Routes
+Protected for Director administration.
 """
 
 import uuid
@@ -8,7 +9,7 @@ from flask import Blueprint, jsonify, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.auth_helper import (
-    admin_required,
+    director_required,
     generate_jwt_token,
     record_audit_log,
     token_required
@@ -40,7 +41,6 @@ def login():
         return jsonify({"success": False, "error": "This account has been deactivated."}), 403
 
     pwd_hash = target_user.get("password_hash", "")
-    # Check hashed password; also support fallback comparison if legacy plain
     if not (check_password_hash(pwd_hash, password) or pwd_hash == password):
         return jsonify({"success": False, "error": "Invalid email or password."}), 401
 
@@ -90,7 +90,7 @@ def logout(current_user):
     return jsonify({"success": True, "message": "Logged out successfully."})
 
 @auth_bp.route("/users", methods=["GET"])
-@admin_required
+@director_required
 def list_users(current_user):
     users = sheets_client.read_rows("Users")
     safe_users = [
@@ -107,7 +107,7 @@ def list_users(current_user):
     return jsonify({"success": True, "users": safe_users})
 
 @auth_bp.route("/users", methods=["POST"])
-@admin_required
+@director_required
 def create_user(current_user):
     data = request.get_json() or {}
     email = data.get("email", "").strip().lower()
@@ -128,7 +128,7 @@ def create_user(current_user):
         "name": name,
         "email": email,
         "password_hash": generate_password_hash(password),
-        "role": role if role in ["Admin", "Employee"] else "Employee",
+        "role": role if role in ["Director", "Admin", "Employee"] else "Employee",
         "is_active": "TRUE",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -154,7 +154,7 @@ def create_user(current_user):
     }), 201
 
 @auth_bp.route("/users/<user_id>", methods=["PUT"])
-@admin_required
+@director_required
 def update_user(current_user, user_id):
     data = request.get_json() or {}
     users = sheets_client.read_rows("Users")
@@ -170,7 +170,7 @@ def update_user(current_user, user_id):
     updated = dict(target)
     if "name" in data:
         updated["name"] = data["name"].strip()
-    if "role" in data and data["role"] in ["Admin", "Employee"]:
+    if "role" in data and data["role"] in ["Director", "Admin", "Employee"]:
         updated["role"] = data["role"]
     if "is_active" in data:
         updated["is_active"] = "TRUE" if data["is_active"] else "FALSE"

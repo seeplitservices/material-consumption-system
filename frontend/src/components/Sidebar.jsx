@@ -2,9 +2,8 @@ import React from 'react';
 import {
   LayoutDashboard,
   ClipboardPenLine,
-  Layers,
-  Layers2,
   Boxes,
+  Layers,
   Trash2,
   Activity,
   History,
@@ -16,21 +15,28 @@ import {
   Factory
 } from 'lucide-react';
 
-const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'daily-entry', label: 'Daily Material Entry', icon: ClipboardPenLine, badge: 'Daily' },
-  { id: 'left-stock', label: 'Left Side Stock', icon: Layers },
-  { id: 'right-stock', label: 'Right Side Stock', icon: Layers2 },
-  { id: 'material-master', label: 'Material Master', icon: Boxes },
-  { id: 'scrap-analysis', label: 'Scrap & Wastage', icon: Trash2 },
-  { id: 'production-summary', label: 'Production Summary', icon: Activity },
-  { id: 'historical-records', label: 'Historical Records', icon: History },
-  { id: 'reports', label: 'Reports & Export', icon: FileSpreadsheet },
-  { id: 'user-management', label: 'User Management', icon: Users, adminOnly: true },
-  { id: 'settings', label: 'Settings', icon: Settings },
+const ALL_NAV_ITEMS = [
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, directorOnly: true },
+  { id: 'daily-entry', label: 'Daily Material Entry', icon: ClipboardPenLine, badge: 'Entry' },
+  { id: 'material-stock', label: 'Material Stock', icon: Layers, directorOnly: true },
+  { id: 'material-master', label: 'Material Master', icon: Boxes, directorOnly: true },
+  { id: 'scrap-analysis', label: 'Scrap & Wastage', icon: Trash2, directorOnly: true },
+  { id: 'production-summary', label: 'Production Summary', icon: Activity, directorOnly: true },
+  { id: 'historical-records', label: 'Historical Records', icon: History, directorOnly: true },
+  { id: 'reports', label: 'Reports & Export', icon: FileSpreadsheet, directorOnly: true },
+  { id: 'user-management', label: 'User Management', icon: Users, directorOnly: true },
+  { id: 'settings', label: 'Settings', icon: Settings, directorOnly: true },
 ];
 
-export default function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse, isAdmin }) {
+export default function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse, isDirector }) {
+  // If not Director, show ONLY Daily Material Entry
+  const visibleNavItems = ALL_NAV_ITEMS.filter(item => {
+    if (!isDirector) {
+      return item.id === 'daily-entry';
+    }
+    return true;
+  });
+
   return (
     <aside
       className={`fixed top-0 left-0 h-screen z-30 transition-all duration-300 flex flex-col border-r
@@ -46,7 +52,9 @@ export default function Sidebar({ currentPage, onNavigate, collapsed, onToggleCo
           {!collapsed && (
             <div className="flex flex-col truncate">
               <span className="font-bold text-sm text-slate-100 tracking-tight">MCWMS</span>
-              <span className="text-[11px] text-slate-400 font-medium truncate">Material Control System</span>
+              <span className="text-[11px] text-slate-400 font-medium truncate">
+                {isDirector ? 'Executive Portal' : 'Operator Entry Portal'}
+              </span>
             </div>
           )}
         </div>
@@ -61,8 +69,7 @@ export default function Sidebar({ currentPage, onNavigate, collapsed, onToggleCo
 
       {/* Navigation List */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5">
-        {NAV_ITEMS.map(item => {
-          if (item.adminOnly && !isAdmin) return null;
+        {visibleNavItems.map(item => {
           const Icon = item.icon;
           const isActive = currentPage === item.id;
 

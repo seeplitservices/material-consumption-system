@@ -5,7 +5,6 @@ import {
   Trash2,
   Percent,
   Scissors,
-  ArrowRightLeft,
   Boxes,
   TrendingUp,
   RefreshCw,
@@ -36,7 +35,6 @@ export default function Dashboard({ onNavigateToEntry }) {
   const [filterType, setFilterType] = useState('this_month');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [sideFilter, setSideFilter] = useState('All');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -49,8 +47,7 @@ export default function Dashboard({ onNavigateToEntry }) {
     try {
       const queryParams = new URLSearchParams({
         filter: filterType,
-        ...(filterType === 'custom' && startDate && endDate ? { start_date: startDate, end_date: endDate } : {}),
-        ...(sideFilter !== 'All' ? { side: sideFilter } : {})
+        ...(filterType === 'custom' && startDate && endDate ? { start_date: startDate, end_date: endDate } : {})
       });
 
       const [summaryRes, chartsRes] = await Promise.all([
@@ -69,7 +66,7 @@ export default function Dashboard({ onNavigateToEntry }) {
 
   useEffect(() => {
     fetchDashboardData();
-  }, [filterType, startDate, endDate, sideFilter]);
+  }, [filterType, startDate, endDate]);
 
   const kpis = summaryData?.kpis || {};
   const recentTxs = summaryData?.recent_transactions || [];
@@ -78,36 +75,16 @@ export default function Dashboard({ onNavigateToEntry }) {
     <div className="space-y-6">
       {/* Top Filter and Controls Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3">
-          <DateFilter
-            activeFilter={filterType}
-            onFilterChange={setFilterType}
-            startDate={startDate}
-            endDate={endDate}
-            onCustomDateChange={(s, e) => {
-              setStartDate(s);
-              setEndDate(e);
-            }}
-          />
-
-          {/* Side Selector */}
-          <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-1.5 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs text-xs">
-            <span className="text-slate-400 px-2 font-medium">Side:</span>
-            {['All', 'Left', 'Right'].map(s => (
-              <button
-                key={s}
-                onClick={() => setSideFilter(s)}
-                className={`px-3 py-1 font-medium rounded-lg transition-colors ${
-                  sideFilter === s
-                    ? 'bg-sky-600 text-white shadow-xs'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        </div>
+        <DateFilter
+          activeFilter={filterType}
+          onFilterChange={setFilterType}
+          startDate={startDate}
+          endDate={endDate}
+          onCustomDateChange={(s, e) => {
+            setStartDate(s);
+            setEndDate(e);
+          }}
+        />
 
         <div className="flex items-center gap-2">
           <button
@@ -131,11 +108,11 @@ export default function Dashboard({ onNavigateToEntry }) {
       {error && <ErrorMessage error={error} onRetry={fetchDashboardData} />}
 
       {loading && !summaryData ? (
-        <Loading message="Syncing metrics from Google Sheets..." />
+        <Loading message="Syncing executive metrics from Google Sheets..." />
       ) : (
         <>
-          {/* 7 KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+          {/* Executive KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <KPICard
               title="Sheets Punched"
               value={kpis.total_sheets_punched}
@@ -148,7 +125,7 @@ export default function Dashboard({ onNavigateToEntry }) {
               title="Net Consumed"
               value={kpis.total_material_consumed_kg}
               unit="kg"
-              subtitle="Total material input - scrap"
+              subtitle="Gross weight - scrap"
               icon={Scale}
               color="emerald"
             />
@@ -156,7 +133,7 @@ export default function Dashboard({ onNavigateToEntry }) {
               title="Scrap Generated"
               value={kpis.total_scrap_generated_kg}
               unit="kg"
-              subtitle="Recorded scrap weight"
+              subtitle="Factory scrap weight"
               icon={Trash2}
               color="amber"
             />
@@ -177,24 +154,16 @@ export default function Dashboard({ onNavigateToEntry }) {
               color="slate"
             />
             <KPICard
-              title="Left Stock"
-              value={kpis.available_left_stock}
+              title="Available Stock"
+              value={kpis.total_available_stock}
               unit="sheets"
-              subtitle="Closing balance"
+              subtitle="Total inventory balance"
               icon={Boxes}
               color="sky"
             />
-            <KPICard
-              title="Right Stock"
-              value={kpis.available_right_stock}
-              unit="sheets"
-              subtitle="Closing balance"
-              icon={Boxes}
-              color="emerald"
-            />
           </div>
 
-          {/* Charts Grid: 8 Industrial Analytics Charts */}
+          {/* Charts Grid: Factory Executive Analytics */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             
             {/* 1. Daily Material Consumption Trend */}
@@ -227,38 +196,14 @@ export default function Dashboard({ onNavigateToEntry }) {
               </div>
             </div>
 
-            {/* 2. Left vs Right Material Consumption */}
-            <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 shadow-xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                    Left vs Right Material Consumption
-                  </h3>
-                  <p className="text-[11px] text-slate-400">Side-by-side consumption distribution</p>
-                </div>
-                <ArrowRightLeft className="w-4 h-4 text-emerald-500" />
-              </div>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartsData?.left_vs_right || []}>
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                    <XAxis dataKey="side" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Bar dataKey="consumption_kg" fill="#10b981" radius={[6, 6, 0, 0]} name="Consumption (kg)" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* 3. Top 5 Materials by Consumption */}
+            {/* 2. Top 5 Materials by Consumption */}
             <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 shadow-xs">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
                     Top 5 Materials by Consumption
                   </h3>
-                  <p className="text-[11px] text-slate-400">Heaviest volume materials in production</p>
+                  <p className="text-[11px] text-slate-400">Highest volume materials consumed</p>
                 </div>
               </div>
               <div className="h-64">
@@ -274,7 +219,7 @@ export default function Dashboard({ onNavigateToEntry }) {
               </div>
             </div>
 
-            {/* 4. Daily Scrap Weight Trend */}
+            {/* 3. Daily Scrap Generation Trend */}
             <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 shadow-xs">
               <div className="flex items-center justify-between mb-4">
                 <div>
@@ -298,14 +243,14 @@ export default function Dashboard({ onNavigateToEntry }) {
               </div>
             </div>
 
-            {/* 5. Monthly Wastage Percentage */}
+            {/* 4. Monthly Wastage Percentage */}
             <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 shadow-xs">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
                     Monthly Wastage Percentage
                   </h3>
-                  <p className="text-[11px] text-slate-400">Scrap vs total input weight ratio per month</p>
+                  <p className="text-[11px] text-slate-400">Total scrap vs input weight ratio per month</p>
                 </div>
                 <Percent className="w-4 h-4 text-indigo-500" />
               </div>
@@ -322,37 +267,14 @@ export default function Dashboard({ onNavigateToEntry }) {
               </div>
             </div>
 
-            {/* 6. Top 5 Materials by Scrap Generation */}
-            <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 shadow-xs">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
-                    Top 5 Materials by Scrap Generation
-                  </h3>
-                  <p className="text-[11px] text-slate-400">Critical materials needing nesting optimization</p>
-                </div>
-              </div>
-              <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartsData?.top_5_scrap || []} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                    <XAxis type="number" tick={{ fontSize: 10 }} />
-                    <YAxis dataKey="material_name" type="category" tick={{ fontSize: 10 }} width={130} />
-                    <Tooltip />
-                    <Bar dataKey="scrap_kg" fill="#ef4444" radius={[0, 6, 6, 0]} name="Scrap (kg)" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            {/* 7. Opening vs Closing Stock */}
+            {/* 5. Opening vs Closing Stock Comparison */}
             <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 shadow-xs lg:col-span-2">
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
                     Opening vs Closing Stock Comparison
                   </h3>
-                  <p className="text-[11px] text-slate-400">Inventory balance dynamics per key material</p>
+                  <p className="text-[11px] text-slate-400">Inventory balance dynamics per material</p>
                 </div>
                 <Boxes className="w-4 h-4 text-sky-500" />
               </div>
@@ -379,7 +301,7 @@ export default function Dashboard({ onNavigateToEntry }) {
               <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">
                 Recent Daily Transactions
               </h3>
-              <span className="text-xs text-slate-400">Latest activity from Google Sheets</span>
+              <span className="text-xs text-slate-400">Live from Google Sheets (Daily_Entries)</span>
             </div>
 
             <div className="overflow-x-auto">
@@ -388,7 +310,6 @@ export default function Dashboard({ onNavigateToEntry }) {
                   <tr className="border-b border-slate-100 dark:border-slate-800 text-[11px] text-slate-400 uppercase tracking-wider">
                     <th className="py-2.5 px-3">Date</th>
                     <th className="py-2.5 px-3">Job / Shift</th>
-                    <th className="py-2.5 px-3">Side</th>
                     <th className="py-2.5 px-3">Material</th>
                     <th className="py-2.5 px-3">Used</th>
                     <th className="py-2.5 px-3">Input Wt</th>
@@ -401,8 +322,8 @@ export default function Dashboard({ onNavigateToEntry }) {
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60 font-mono">
                   {recentTxs.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-6 text-center text-slate-400 font-sans">
-                        No transactions recorded yet. Click "New Daily Entry" to record production.
+                      <td colSpan={9} className="py-6 text-center text-slate-400 font-sans">
+                        No transactions recorded yet. Data is clean and ready for daily operations.
                       </td>
                     </tr>
                   ) : (
@@ -412,15 +333,6 @@ export default function Dashboard({ onNavigateToEntry }) {
                         <td className="py-2.5 px-3 font-sans">
                           <span className="font-medium text-slate-800 dark:text-slate-200">{tx.job_number || 'N/A'}</span>
                           <span className="text-[10px] text-slate-400 block">{tx.shift}</span>
-                        </td>
-                        <td className="py-2.5 px-3 font-sans">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
-                            tx.side === 'Left'
-                              ? 'bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300'
-                              : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300'
-                          }`}>
-                            {tx.side}
-                          </span>
                         </td>
                         <td className="py-2.5 px-3 font-sans font-medium text-slate-800 dark:text-slate-200">
                           {tx.material_name}

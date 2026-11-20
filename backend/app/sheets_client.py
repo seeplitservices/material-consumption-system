@@ -1,6 +1,6 @@
 """
 Google Sheets API Client with Exponential Backoff, Caching, Batch Operations,
-and In-Memory Mock Fallback for local development/testing before credentials are supplied.
+and In-Memory Mock Fallback. Unified single-sheet factory inventory.
 """
 
 import json
@@ -45,15 +45,25 @@ class SheetsClient:
         self.init_google_sheets()
 
     def _init_mock_defaults(self):
-        """Initializes default master materials and admin user for offline/mock development."""
+        """Initializes default master materials, baseline inventory, and users with all entered transaction data cleared."""
         now = datetime.now(timezone.utc).isoformat()
         
-        # Seed Material_Master
+        # 1. Reset all transaction sheets completely
+        self._mock_data["Daily_Entries"] = []
+        self._mock_data["Scrap_Records"] = []
+        self._mock_data["Production_Summary"] = []
+        self._mock_data["Stock_Adjustments"] = []
+        self._mock_data["Audit_Log"] = []
+        self._mock_data["Material_Master"] = []
+        self._mock_data["Material_Stock"] = []
+        self._mock_data["Users"] = []
+        self._mock_data["Settings"] = []
+
+        # 2. Seed unified Material_Master
         for mat in PRECONFIGURED_MATERIALS:
             mat_record = {
                 "material_id": mat["material_id"],
                 "material_name": mat["material_name"],
-                "side": mat["side"],
                 "category": mat["category"],
                 "material_type": mat["material_type"],
                 "length_mm": mat["length_mm"],
@@ -68,7 +78,7 @@ class SheetsClient:
             }
             self._mock_data["Material_Master"].append(mat_record)
 
-            # Seed initial stock on baseline date
+            # Seed clean baseline stock into unified Material_Stock
             stock_val = mat.get("initial_stock")
             stock_entry = {
                 "stock_id": f"INIT-{mat['material_id']}",
@@ -80,38 +90,45 @@ class SheetsClient:
                 "punching_stock": 0,
                 "closing_stock": stock_val if stock_val is not None else "Not Configured",
                 "remarks": "Initial Baseline Stock",
-                "updated_by": "System Admin",
+                "updated_by": "System Director",
                 "updated_at": now
             }
-            if mat["side"] == "Left":
-                self._mock_data["Left_Stock"].append(stock_entry)
-            elif mat["side"] == "Right":
-                self._mock_data["Right_Stock"].append(stock_entry)
+            self._mock_data["Material_Stock"].append(stock_entry)
 
-        # Seed initial admin and factory employee users
+        # 3. Seed Director and Data Entry Operator accounts
+        director_pass = generate_password_hash("Director@123")
         admin_pass = generate_password_hash("Admin@123")
-        employee_pass = generate_password_hash("Employee@123")
+        operator_pass = generate_password_hash("Operator@123")
         
+        self._mock_data["Users"].append({
+            "user_id": "USR-DIR",
+            "name": "Managing Director",
+            "email": "director@factory.com",
+            "password_hash": director_pass,
+            "role": "Director",
+            "is_active": "TRUE",
+            "created_at": now
+        })
         self._mock_data["Users"].append({
             "user_id": "USR-001",
             "name": "Factory Administrator",
             "email": "admin@factory.com",
             "password_hash": admin_pass,
-            "role": "Admin",
+            "role": "Director",
             "is_active": "TRUE",
             "created_at": now
         })
         self._mock_data["Users"].append({
             "user_id": "USR-002",
-            "name": "Operator Employee",
+            "name": "Data Entry Operator",
             "email": "operator@factory.com",
-            "password_hash": employee_pass,
+            "password_hash": operator_pass,
             "role": "Employee",
             "is_active": "TRUE",
             "created_at": now
         })
 
-        # Seed initial settings
+        # 4. Seed initial settings
         self._mock_data["Settings"].append({
             "setting_key": "baseline_date",
             "setting_value": Config.BASELINE_DATE,
@@ -122,6 +139,12 @@ class SheetsClient:
             "setting_value": str(Config.STEEL_DENSITY_COEFFICIENT),
             "updated_at": now
         })
+
+    def clear_all_transaction_data(self):
+        """Clears all historical transactions and resets stock to baseline."""
+        self._init_mock_defaults()
+        self.invalidate_cache()
+        logger.info("Cleared all transaction data and reset inventory to clean baseline.")
 
     def init_google_sheets(self) -> bool:
         """Initializes connection to Google Sheets API using service account credentials."""
@@ -146,7 +169,6 @@ class SheetsClient:
                     creds_path, scopes=SCOPES
                 )
             else:
-                # Look for service_account.json in backend directory
                 default_file = Path(__file__).resolve().parent.parent / 'service_account.json'
                 if default_file.exists():
                     credentials = service_account.Credentials.from_service_account_file(
@@ -159,13 +181,11 @@ class SheetsClient:
                 return False
 
             self.service = build('sheets', 'v4', credentials=credentials)
-            # Verify connectivity by fetching spreadsheet metadata
             self.service.spreadsheets().get(spreadsheetId=self.spreadsheet_id).execute()
             self.is_connected = True
             self.connection_error = None
             logger.info("Successfully connected to Google Sheets API: %s", self.spreadsheet_id)
 
-            # Ensure all required worksheets and headers exist
             self._ensure_sheets_exist()
             return True
 
@@ -200,7 +220,7 @@ class SheetsClient:
                     raise
 
     def _ensure_sheets_exist(self):
-        """Verifies all 10 required worksheets exist; creates missing ones with correct headers."""
+        """Verifies all required worksheets exist; creates missing ones with correct headers."""
         if not self.is_connected or not self.service:
             return
 
@@ -257,7 +277,6 @@ class SheetsClient:
                     self.append_row("Material_Master", {
                         "material_id": mat["material_id"],
                         "material_name": mat["material_name"],
-                        "side": mat["side"],
                         "category": mat["category"],
                         "material_type": mat["material_type"],
                         "length_mm": mat["length_mm"],
@@ -330,7 +349,6 @@ class SheetsClient:
             sheet_headers = raw_rows[0]
             records = []
             for row in raw_rows[1:]:
-                # Pad short rows
                 padded = row + [''] * (len(sheet_headers) - len(row))
                 record = {sheet_headers[i]: padded[i] for i in range(len(sheet_headers))}
                 records.append(record)
@@ -352,8 +370,6 @@ class SheetsClient:
         row_values = [str(record.get(h, '')) if record.get(h) is not None else '' for h in headers]
 
         self.invalidate_cache(sheet_name)
-
-        # Mock fallback
         self._mock_data[sheet_name].append(dict(record))
 
         if not self.is_connected or not self.service:
@@ -385,8 +401,6 @@ class SheetsClient:
         ]
 
         self.invalidate_cache(sheet_name)
-
-        # Update mock
         self._mock_data[sheet_name].extend(records)
 
         if not self.is_connected or not self.service:
@@ -410,14 +424,13 @@ class SheetsClient:
     def update_row_by_id(
         self, sheet_name: str, id_field: str, id_val: str, updated_record: Dict[str, Any]
     ) -> bool:
-        """Updates a specific row identified by its unique ID without rewriting the entire spreadsheet."""
+        """Updates a specific row identified by unique ID."""
         if sheet_name not in SHEET_SCHEMAS:
             raise ValueError(f"Unknown sheet: {sheet_name}")
 
         headers = SHEET_SCHEMAS[sheet_name]
         self.invalidate_cache(sheet_name)
 
-        # Update in mock store
         found_in_mock = False
         for i, item in enumerate(self._mock_data.get(sheet_name, [])):
             if str(item.get(id_field)) == str(id_val):
@@ -429,7 +442,6 @@ class SheetsClient:
             return found_in_mock
 
         try:
-            # Find row index in Google Sheet
             result = self._execute_with_retry(
                 lambda: self.service.spreadsheets().values().get(
                     spreadsheetId=self.spreadsheet_id,
@@ -446,7 +458,7 @@ class SheetsClient:
             id_col_idx = header_row.index(id_field)
 
             row_to_update_idx = None
-            for idx, r in enumerate(rows[1:], start=2):  # 1-based index in sheets, row 2 is first data row
+            for idx, r in enumerate(rows[1:], start=2):
                 if len(r) > id_col_idx and str(r[id_col_idx]) == str(id_val):
                     row_to_update_idx = idx
                     break
@@ -475,7 +487,6 @@ class SheetsClient:
 
         self.invalidate_cache(sheet_name)
 
-        # Remove from mock
         before_len = len(self._mock_data.get(sheet_name, []))
         self._mock_data[sheet_name] = [
             item for item in self._mock_data.get(sheet_name, [])
@@ -487,7 +498,6 @@ class SheetsClient:
             return removed_mock
 
         try:
-            # For Google Sheets, get sheetId
             metadata = self._execute_with_retry(
                 lambda: self.service.spreadsheets().get(spreadsheetId=self.spreadsheet_id).execute()
             )
@@ -511,7 +521,7 @@ class SheetsClient:
             id_col_idx = header_row.index(id_field)
 
             row_idx_to_delete = None
-            for idx, r in enumerate(rows[1:], start=1):  # 0-based for dimension range
+            for idx, r in enumerate(rows[1:], start=1):
                 if len(r) > id_col_idx and str(r[id_col_idx]) == str(id_val):
                     row_idx_to_delete = idx
                     break

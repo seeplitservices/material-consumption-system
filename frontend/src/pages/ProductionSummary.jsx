@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Scissors, Layers, Calendar, Filter } from 'lucide-react';
+import { Activity, Scissors, Layers, Calendar } from 'lucide-react';
 import KPICard from '../components/KPICard';
 import DataTable from '../components/DataTable';
 import Loading from '../components/Loading';
@@ -33,20 +33,16 @@ export default function ProductionSummary() {
   }, [dateFilter]);
 
   // Aggregate totals across loaded records
-  const totalLeftPunch = productionList.reduce((acc, r) => acc + (parseFloat(r.left_total_punching) || 0), 0);
-  const totalRightPunch = productionList.reduce((acc, r) => acc + (parseFloat(r.right_total_punching) || 0), 0);
-  const totalOverallPunch = productionList.reduce((acc, r) => acc + (parseFloat(r.overall_total_punching) || 0), 0);
-  const totalCutbit = productionList.reduce((acc, r) => acc + (parseFloat(r.overall_cutbit) || 0), 0);
+  const totalPunching = productionList.reduce((acc, r) => acc + (parseFloat(r.total_punching) || 0), 0);
+  const totalCutbit = productionList.reduce((acc, r) => acc + (parseFloat(r.total_cutbit) || 0), 0);
+  const avgPunching = productionList.length > 0 ? (totalPunching / productionList.length).toFixed(1) : '0.0';
 
   const columns = [
-    { key: 'date', label: 'Date', className: 'w-28 font-mono font-bold text-xs' },
-    { key: 'left_total_punching_display', label: 'Left Punching (Sheets)', render: val => <span className="font-mono text-sky-600 dark:text-sky-400 font-bold">{val}</span> },
-    { key: 'right_total_punching_display', label: 'Right Punching (Sheets)', render: val => <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{val}</span> },
-    { key: 'overall_total_punching_display', label: 'Overall Punching (Sheets)', render: val => <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{val}</span> },
-    { key: 'left_cutbit_display', label: 'Left Cutbit', render: val => <span className="font-mono text-slate-600 dark:text-slate-400">{val}</span> },
-    { key: 'right_cutbit_display', label: 'Right Cutbit', render: val => <span className="font-mono text-slate-600 dark:text-slate-400">{val}</span> },
-    { key: 'overall_cutbit_display', label: 'Total Cutbit Used', render: val => <span className="font-mono font-bold text-amber-600 dark:text-amber-400">{val}</span> },
-    { key: 'remarks', label: 'Production Notes', render: val => <span className="text-slate-500 text-[11px]">{val || '--'}</span> }
+    { key: 'date', label: 'Production Date', className: 'w-32 font-mono font-bold text-xs' },
+    { key: 'total_punching_display', label: 'Total Sheet Punching', render: val => <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-sm">{val} sheets</span> },
+    { key: 'total_cutbit_display', label: 'Cutbit / Off-cuts Used', render: val => <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">{val}</span> },
+    { key: 'remarks', label: 'Production Notes / References', render: val => <span className="text-slate-500 text-xs">{val || '--'}</span> },
+    { key: 'updated_at', label: 'Last Updated', render: val => <span className="font-mono text-[11px] text-slate-400">{val ? new Date(val).toLocaleTimeString() : '--'}</span> }
   ];
 
   return (
@@ -58,7 +54,7 @@ export default function ProductionSummary() {
             Daily Production Summary: Punching & Cutbit Tracking
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Aggregated factory metrics: Left Side Punching, Right Side Punching, Total Punching, and Off-cut Cutbit usage per day.
+            Aggregated factory metrics: Total sheet punching volume and off-cut cutbit re-use recorded per day.
           </p>
         </div>
 
@@ -88,46 +84,46 @@ export default function ProductionSummary() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <KPICard
           title="Overall Punching Volume"
-          value={totalOverallPunch.toFixed(1)}
+          value={totalPunching.toFixed(1)}
           unit="sheets"
-          subtitle="All recorded days"
+          subtitle="Cumulative sheets punched"
           icon={Activity}
           color="indigo"
         />
         <KPICard
-          title="Left Side Total Punching"
-          value={totalLeftPunch.toFixed(1)}
-          unit="sheets"
-          subtitle="Left side sum"
-          icon={Layers}
+          title="Cutbit / Off-cuts Reused"
+          value={totalCutbit.toFixed(1)}
+          unit="pcs"
+          subtitle="Total secondary material used"
+          icon={Scissors}
+          color="amber"
+        />
+        <KPICard
+          title="Recorded Production Days"
+          value={productionList.length}
+          unit="days"
+          subtitle="Operating shifts logged"
+          icon={Calendar}
           color="sky"
         />
         <KPICard
-          title="Right Side Total Punching"
-          value={totalRightPunch.toFixed(1)}
-          unit="sheets"
-          subtitle="Right side sum"
+          title="Average Daily Punching"
+          value={avgPunching}
+          unit="sheets/day"
+          subtitle="Mean daily throughput"
           icon={Layers}
           color="emerald"
-        />
-        <KPICard
-          title="Total Cutbit Pieces Used"
-          value={totalCutbit.toFixed(1)}
-          unit="sheets"
-          subtitle="Off-cut sheet pieces"
-          icon={Scissors}
-          color="amber"
         />
       </div>
 
       {loading ? (
-        <Loading message="Fetching production summaries from Google Sheets..." />
+        <Loading message="Syncing production summary from Google Sheets..." />
       ) : (
         <DataTable
           columns={columns}
           data={productionList}
-          title={`Daily Production Records (${productionList.length})`}
-          exportFilename="daily_production_summary"
+          title={`Daily Production Ledger (${productionList.length} days)`}
+          exportFilename="daily_punching_cutbit_summary"
           pageSize={10}
         />
       )}

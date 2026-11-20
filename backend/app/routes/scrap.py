@@ -1,20 +1,21 @@
 """
-Scrap and Wastage Management Routes
+Scrap and Wastage Management Routes (Unified Factory Operations)
 """
 
 from flask import Blueprint, jsonify, request
+from app.auth_helper import director_required, token_required
 from app.calculator import calculate_period_wastage, round_display
 from app.sheets_client import sheets_client
 
 scrap_bp = Blueprint("scrap", __name__)
 
 @scrap_bp.route("", methods=["GET"])
-def get_scrap_records():
-    """Returns scrap records with optional date, side, and material filters."""
+@director_required
+def get_scrap_records(current_user):
+    """Returns factory scrap records with optional date and material filters."""
     date_filter = request.args.get("date")
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
-    side_filter = request.args.get("side")
     mat_filter = request.args.get("material_id")
 
     rows = sheets_client.read_rows("Scrap_Records")
@@ -27,8 +28,6 @@ def get_scrap_records():
         if start_date and d < start_date:
             continue
         if end_date and d > end_date:
-            continue
-        if side_filter and r.get("side") != side_filter:
             continue
         if mat_filter and r.get("material_id") != mat_filter:
             continue
@@ -53,9 +52,10 @@ def get_scrap_records():
     return jsonify({"success": True, "count": len(filtered), "records": filtered})
 
 @scrap_bp.route("/summary", methods=["GET"])
-def get_scrap_summary():
+@director_required
+def get_scrap_summary(current_user):
     """
-    Returns side-wise scrap weights and period wastage percentage.
+    Returns factory scrap weights and overall wastage percentage.
     Calculates overall wastage from sum(scrap) / sum(input) * 100.
     """
     start_date = request.args.get("start_date")
@@ -67,20 +67,12 @@ def get_scrap_summary():
     if end_date:
         rows = [r for r in rows if r.get("date", "") <= end_date]
 
-    left_scrap = sum(float(r.get("scrap_weight", 0)) for r in rows if r.get("side") == "Left")
-    right_scrap = sum(float(r.get("scrap_weight", 0)) for r in rows if r.get("side") == "Right")
-    total_scrap = left_scrap + right_scrap
-
-    left_input = sum(float(r.get("total_input_weight", 0)) for r in rows if r.get("side") == "Left")
-    right_input = sum(float(r.get("total_input_weight", 0)) for r in rows if r.get("side") == "Right")
-    total_input = left_input + right_input
-
+    total_scrap = sum(float(r.get("scrap_weight", 0)) for r in rows)
+    total_input = sum(float(r.get("total_input_weight", 0)) for r in rows)
     overall_wastage = calculate_period_wastage(total_scrap, total_input)
 
     return jsonify({
         "success": True,
-        "left_scrap_weight": round_display(left_scrap),
-        "right_scrap_weight": round_display(right_scrap),
         "total_scrap_weight": round_display(total_scrap),
         "total_input_weight": round_display(total_input),
         "net_material_consumption": round_display(total_input - total_scrap),

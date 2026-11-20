@@ -1,5 +1,6 @@
 """
-Authentication Helpers, JWT Token Handling, and Audit Logging
+Authentication Helpers, JWT Token Handling, Role Protection, and Audit Logging
+Role hierarchy: 'Director' / 'Admin' (full management access) vs 'Employee' / 'Operator' (Data Entry only).
 """
 
 import functools
@@ -53,8 +54,8 @@ def token_required(f: Callable) -> Callable:
         return f(current_user=user, *args, **kwargs)
     return decorated
 
-def admin_required(f: Callable) -> Callable:
-    """Decorator ensuring the authenticated user has Admin role."""
+def director_required(f: Callable) -> Callable:
+    """Decorator ensuring the authenticated user has Director or Admin privileges."""
     @functools.wraps(f)
     def decorated(*args, **kwargs):
         user = get_current_user()
@@ -63,13 +64,17 @@ def admin_required(f: Callable) -> Callable:
                 "success": False,
                 "error": "Authentication token is missing, expired, or invalid."
             }), 401
-        if user.get("role") != "Admin":
+        role = user.get("role", "")
+        if role not in ["Director", "Admin"]:
             return jsonify({
                 "success": False,
-                "error": "Access denied: Administrator privileges required."
+                "error": "Access denied: Managing Director privileges required to access this feature."
             }), 403
         return f(current_user=user, *args, **kwargs)
     return decorated
+
+# Backward-compatible alias
+admin_required = director_required
 
 def record_audit_log(
     user_id: str,

@@ -14,7 +14,7 @@ import { useTheme } from '../context/ThemeContext';
 import { api } from '../services/api';
 
 export default function Header({ pageTitle, onOpenCalculator }) {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isDirector } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [dbStatus, setDbStatus] = useState({ is_connected: false, using_mock: true });
   const [checking, setChecking] = useState(false);
@@ -38,7 +38,7 @@ export default function Header({ pageTitle, onOpenCalculator }) {
 
   useEffect(() => {
     checkHealth();
-    const interval = setInterval(checkHealth, 60000); // 1 min health poll
+    const interval = setInterval(checkHealth, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -79,7 +79,7 @@ export default function Header({ pageTitle, onOpenCalculator }) {
         >
           <Database className="w-3.5 h-3.5" />
           <span className="hidden md:inline">
-            {dbStatus.is_connected ? 'Google Sheets Live' : 'Local Storage Mode'}
+            {dbStatus.is_connected ? 'Google Sheets Live' : 'Unified Local Storage'}
           </span>
           <span className={`w-2 h-2 rounded-full ${dbStatus.is_connected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
           {checking && <RefreshCw className="w-3 h-3 animate-spin" />}
@@ -97,16 +97,27 @@ export default function Header({ pageTitle, onOpenCalculator }) {
 
         {/* User Badge */}
         <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
-          <div className="w-8 h-8 rounded-full bg-sky-600 text-white flex items-center justify-center font-bold text-xs uppercase shadow-sm">
+          <div className={`w-8 h-8 rounded-full text-white flex items-center justify-center font-bold text-xs uppercase shadow-sm ${
+            isDirector ? 'bg-purple-600' : 'bg-sky-600'
+          }`}>
             {user?.name ? user.name[0] : 'U'}
           </div>
           <div className="hidden lg:flex flex-col text-left">
             <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-tight">
               {user?.name || 'Operator'}
             </span>
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
-              {isAdmin ? <Shield className="w-2.5 h-2.5 text-sky-500" /> : <User className="w-2.5 h-2.5" />}
-              {user?.role || 'Employee'}
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center gap-1 font-medium">
+              {isDirector ? (
+                <>
+                  <Shield className="w-2.5 h-2.5 text-purple-500" />
+                  <span className="text-purple-600 dark:text-purple-400 font-semibold">Managing Director</span>
+                </>
+              ) : (
+                <>
+                  <User className="w-2.5 h-2.5 text-sky-500" />
+                  <span>Data Entry User</span>
+                </>
+              )}
             </span>
           </div>
 

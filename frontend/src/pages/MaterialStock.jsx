@@ -16,8 +16,8 @@ import Toast from '../components/Toast';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
-export default function StockView({ side = 'Left' }) {
-  const { user, isAdmin } = useAuth();
+export default function MaterialStock() {
+  const { user, isDirector } = useAuth();
   const [stockList, setStockList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -40,12 +40,12 @@ export default function StockView({ side = 'Left' }) {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get(`/api/stock/${side.toLowerCase()}`);
+      const res = await api.get('/api/stock');
       if (res.success) {
         setStockList(res.stock || []);
       }
     } catch (err) {
-      setError(err.message || 'Failed to load stock data.');
+      setError(err.message || 'Failed to load stock inventory.');
     } finally {
       setLoading(false);
     }
@@ -53,9 +53,8 @@ export default function StockView({ side = 'Left' }) {
 
   useEffect(() => {
     fetchStock();
-  }, [side]);
+  }, []);
 
-  // Open Adjustment
   const openAdjustmentModal = (mat) => {
     setSelectedMat(mat);
     setAdjQty('');
@@ -73,11 +72,10 @@ export default function StockView({ side = 'Left' }) {
     setAdjSubmitting(true);
     try {
       const res = await api.post('/api/stock/adjustment', {
-        side,
         material_id: selectedMat.material_id,
         adjustment_quantity: parseFloat(adjQty),
         adjustment_reason: adjReason.trim(),
-        employee: user?.name || 'Admin'
+        employee: user?.name || 'Director'
       });
       if (res.success) {
         setToast({ type: 'success', message: res.message });
@@ -91,7 +89,6 @@ export default function StockView({ side = 'Left' }) {
     }
   };
 
-  // Open Initial Stock Config
   const openInitModal = (mat) => {
     setSelectedMat(mat);
     setInitQty('');
@@ -108,7 +105,6 @@ export default function StockView({ side = 'Left' }) {
     setInitSubmitting(true);
     try {
       const res = await api.post('/api/stock/configure-initial', {
-        side,
         material_id: selectedMat.material_id,
         initial_stock: parseFloat(initQty),
         date: initDate
@@ -173,7 +169,7 @@ export default function StockView({ side = 'Left' }) {
       sortable: false,
       render: (_, row) => (
         <div className="flex items-center gap-1.5">
-          {!row.is_configured && isAdmin && (
+          {!row.is_configured && isDirector && (
             <button
               onClick={() => openInitModal(row)}
               className="px-2 py-1 text-[11px] font-semibold rounded bg-amber-500 hover:bg-amber-400 text-white transition-colors"
@@ -181,7 +177,7 @@ export default function StockView({ side = 'Left' }) {
               Set Opening
             </button>
           )}
-          {isAdmin && (
+          {isDirector && (
             <button
               onClick={() => openAdjustmentModal(row)}
               className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors"
@@ -203,17 +199,13 @@ export default function StockView({ side = 'Left' }) {
       <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <span className={`px-2.5 py-0.5 rounded-md text-xs font-bold uppercase tracking-wider ${
-              side === 'Left'
-                ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
-                : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-            }`}>
-              {side} Side Inventory
+            <span className="px-2.5 py-0.5 rounded-md text-xs font-bold uppercase tracking-wider bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300">
+              Unified Inventory
             </span>
-            <span className="text-xs text-slate-400">&bull; Single Source of Truth: Google Sheets</span>
+            <span className="text-xs text-slate-400">&bull; Single Source of Truth: Google Sheets (Material_Stock)</span>
           </div>
           <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-1">
-            {side} Side Material Stock Ledger
+            Material Stock Inventory Ledger
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Formula: Closing Stock = Opening Stock + Stock Received - Sheets Used. Next day's opening stock automatically mirrors closing stock.
@@ -224,13 +216,13 @@ export default function StockView({ side = 'Left' }) {
       {error && <ErrorMessage error={error} onRetry={fetchStock} />}
 
       {loading ? (
-        <Loading message={`Retrieving ${side} Side stock balances from Google Sheets...`} />
+        <Loading message="Retrieving unified material stock balances from Google Sheets..." />
       ) : (
         <DataTable
           columns={columns}
           data={stockList}
-          title={`${side} Side Materials (${stockList.length})`}
-          exportFilename={`${side.toLowerCase()}_stock_ledger`}
+          title={`Factory Stock Inventory (${stockList.length} materials)`}
+          exportFilename="material_stock_ledger"
           pageSize={12}
         />
       )}
@@ -241,7 +233,7 @@ export default function StockView({ side = 'Left' }) {
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md shadow-xl overflow-hidden p-6 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
               <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                Manual Stock Adjustment ({side} Side)
+                Manual Stock Adjustment
               </h3>
               <button onClick={() => setIsAdjOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
@@ -315,7 +307,7 @@ export default function StockView({ side = 'Left' }) {
           <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 w-full max-w-md shadow-xl overflow-hidden p-6 animate-in fade-in zoom-in-95">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
               <h3 className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                Configure Initial Opening Stock ({side} Side)
+                Configure Initial Opening Stock
               </h3>
               <button onClick={() => setIsInitOpen(false)} className="text-slate-400 hover:text-slate-600">
                 <X className="w-4 h-4" />
@@ -381,12 +373,4 @@ export default function StockView({ side = 'Left' }) {
       )}
     </div>
   );
-}
-
-export function LeftStock() {
-  return <StockView side="Left" />;
-}
-
-export function RightStock() {
-  return <StockView side="Right" />;
 }

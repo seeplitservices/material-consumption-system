@@ -8,7 +8,8 @@ import {
   AlertTriangle,
   History,
   Sliders,
-  Save
+  Save,
+  Trash2
 } from 'lucide-react';
 import DataTable from '../components/DataTable';
 import Loading from '../components/Loading';
@@ -18,7 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
 export default function Settings() {
-  const { isAdmin } = useAuth();
+  const { isDirector } = useAuth();
   const [settings, setSettings] = useState(null);
   const [googleStatus, setGoogleStatus] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
@@ -30,6 +31,10 @@ export default function Settings() {
   const [baselineDate, setBaselineDate] = useState('2026-11-01');
   const [steelDensity, setSteelDensity] = useState('0.00000785');
   const [savingSettings, setSavingSettings] = useState(false);
+
+  // Clear Data Modal State
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
+  const [clearingData, setClearingData] = useState(false);
 
   const fetchSettingsAndAudit = async () => {
     setLoading(true);
@@ -78,8 +83,8 @@ export default function Settings() {
 
   const handleSaveSettings = async (e) => {
     e.preventDefault();
-    if (!isAdmin) {
-      setToast({ type: 'warning', message: 'Administrator privileges required.' });
+    if (!isDirector) {
+      setToast({ type: 'warning', message: 'Managing Director privileges required.' });
       return;
     }
 
@@ -97,6 +102,23 @@ export default function Settings() {
       setToast({ type: 'error', message: err.message || 'Failed to update settings.' });
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const handleClearData = async () => {
+    if (!isDirector) return;
+    setClearingData(true);
+    try {
+      const res = await api.post('/api/settings/clear-data');
+      if (res.success) {
+        setToast({ type: 'success', message: 'All entered transactions purged. Stock reset to baseline.' });
+        setIsClearModalOpen(false);
+        fetchSettingsAndAudit();
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: err.message || 'Failed to clear data.' });
+    } finally {
+      setClearingData(false);
     }
   };
 
@@ -185,9 +207,9 @@ export default function Settings() {
                 </div>
 
                 <div className="flex items-center justify-between py-1.5 border-b border-slate-50 dark:border-slate-700/50">
-                  <span className="text-slate-500">Configured Sheets (10/10):</span>
-                  <span className="font-mono text-emerald-600 font-bold">
-                    Material_Master, Daily_Entries, Left_Stock, Right_Stock, Scrap_Records, Production_Summary, Stock_Adjustments, Users, Audit_Log, Settings
+                  <span className="text-slate-500">Unified Sheets Schema:</span>
+                  <span className="font-mono text-emerald-600 font-bold text-[11px]">
+                    Material_Master, Daily_Entries, Material_Stock, Scrap_Records, Production_Summary, Stock_Adjustments, Users, Audit_Log, Settings
                   </span>
                 </div>
 
@@ -224,11 +246,11 @@ export default function Settings() {
                     value={steelDensity}
                     onChange={e => setSteelDensity(e.target.value)}
                     required
-                    disabled={!isAdmin}
+                    disabled={!isDirector}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 font-mono text-sm"
                   />
                   <span className="text-[10px] text-slate-400 mt-0.5 block">
-                    Standard mild steel density: 0.00000785 (used for weight calculations)
+                    Standard mild steel density: 0.00000785 (used for sheet weight calculation)
                   </span>
                 </div>
 
@@ -241,7 +263,7 @@ export default function Settings() {
                     value={baselineDate}
                     onChange={e => setBaselineDate(e.target.value)}
                     required
-                    disabled={!isAdmin}
+                    disabled={!isDirector}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 font-mono"
                   />
                   <span className="text-[10px] text-slate-400 mt-0.5 block">
@@ -249,7 +271,7 @@ export default function Settings() {
                   </span>
                 </div>
 
-                {isAdmin && (
+                {isDirector && (
                   <div className="flex justify-end pt-2">
                     <button
                       type="submit"
@@ -266,16 +288,72 @@ export default function Settings() {
 
           </div>
 
+          {/* Director Factory Data Purge Card */}
+          {isDirector && (
+            <div className="p-6 rounded-2xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/40 dark:bg-rose-950/20 shadow-xs flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Trash2 className="w-5 h-5 text-rose-500" />
+                  <h3 className="font-bold text-sm text-rose-900 dark:text-rose-200">
+                    Purge All Entered Transaction Data
+                  </h3>
+                </div>
+                <p className="text-xs text-rose-700/80 dark:text-rose-300/80 mt-1">
+                  Remove all entered daily consumption entries, scrap records, and production summaries. Material Master and baseline stock quantities remain intact.
+                </p>
+              </div>
+              <button
+                onClick={() => setIsClearModalOpen(true)}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs shadow-xs transition-colors"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Purge Existing Data</span>
+              </button>
+            </div>
+          )}
+
           {/* Audit Log Table */}
           <div className="pt-4">
             <DataTable
               columns={auditColumns}
               data={auditLogs}
-              title={`Immutable System Audit Log (Sheet 9: Audit_Log)`}
+              title="Immutable System Audit Log (Audit_Log Sheet)"
               exportFilename="audit_log_trail"
               pageSize={10}
             />
           </div>
+
+          {/* Confirmation Modal for Data Purge */}
+          {isClearModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
+              <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-2xl border border-rose-200 dark:border-rose-900/60 shadow-2xl p-6 space-y-4">
+                <div className="flex items-center gap-3 text-rose-600">
+                  <AlertTriangle className="w-6 h-6" />
+                  <h3 className="font-bold text-base text-slate-900 dark:text-slate-100">
+                    Confirm Data Purge
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400">
+                  Are you sure you want to remove all entered transaction data? This will clear all daily entries, scrap logs, and production summaries, resetting inventory balances to the initial baseline.
+                </p>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    onClick={() => setIsClearModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium text-xs"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleClearData}
+                    disabled={clearingData}
+                    className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs disabled:opacity-50"
+                  >
+                    {clearingData ? 'Purging...' : 'Yes, Purge Data'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

@@ -1,6 +1,7 @@
 """
 Daily Material Entry Module: Multi-Row Transactions, Real-time Validation,
 Stock Updates, Scrap Recording, and Production Summary Sync.
+Unified under a single sheet without Left / Right split.
 """
 
 import uuid
@@ -15,12 +16,12 @@ from app.sheets_client import sheets_client
 entries_bp = Blueprint("entries", __name__)
 
 @entries_bp.route("", methods=["GET"])
-def get_daily_entries():
-    """Returns daily entries with pagination and date/side/job filters."""
+@token_required
+def get_daily_entries(current_user):
+    """Returns daily entries with date and job filters."""
     date_filter = request.args.get("date")
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
-    side_filter = request.args.get("side")
     material_id_filter = request.args.get("material_id")
     job_filter = request.args.get("job_number")
 
@@ -34,8 +35,6 @@ def get_daily_entries():
         if start_date and ed < start_date:
             continue
         if end_date and ed > end_date:
-            continue
-        if side_filter and r.get("side") != side_filter:
             continue
         if material_id_filter and r.get("material_id") != material_id_filter:
             continue
@@ -68,12 +67,12 @@ def get_daily_entries():
             "cutbit_used_display": round_display(cutbit)
         })
 
-    # Sort descending by date and created_at
     filtered.sort(key=lambda x: (x.get("entry_date", ""), x.get("created_at", "")), reverse=True)
     return jsonify({"success": True, "count": len(filtered), "entries": filtered})
 
 @entries_bp.route("/<entry_id>", methods=["GET"])
-def get_entry_by_id(entry_id):
+@token_required
+def get_entry_by_id(current_user, entry_id):
     rows = sheets_client.read_rows("Daily_Entries")
     for r in rows:
         if r.get("entry_id") == entry_id:
@@ -85,34 +84,28 @@ def get_entry_by_id(entry_id):
 def create_daily_entry(current_user):
     """
     Submits a daily material transaction batch.
-    Handles multiple material rows in a single submission.
-    Atomically records in:
+    Usable by both Data Entry Operators and Directors.
+    Records atomically in:
       1. Daily_Entries (Sheet 2)
-      2. Left_Stock / Right_Stock (Sheets 3 & 4)
-      3. Scrap_Records (Sheet 5)
-      4. Production_Summary (Sheet 6)
-      5. Audit_Log (Sheet 9)
+      2. Material_Stock (Sheet 3)
+      3. Scrap_Records (Sheet 4)
+      4. Production_Summary (Sheet 5)
+      5. Audit_Log (Sheet 8)
     """
     data = request.get_json() or {}
     entry_date = data.get("entry_date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
     shift = data.get("shift", "Day")
-    side = data.get("side", "Left")
     job_number = data.get("job_number", "").strip()
     general_remarks = data.get("remarks", "").strip()
     rows = data.get("rows", [])
     allow_negative_override = data.get("allow_negative_override", False)
 
-    if side not in ["Left", "Right"]:
-        return jsonify({"success": False, "error": "Side must be Left or Right."}), 400
-
     if not rows or not isinstance(rows, list):
         return jsonify({"success": False, "error": "At least one material row is required."}), 400
 
     now = datetime.now(timezone.utc).isoformat()
-    employee_name = current_user.get("name", "Employee")
-    stock_sheet = "Left_Stock" if side == "Left" else "Right_Stock"
+    employee_name = current_user.get("name", "Operator")
 
-    # Fetch materials to get verified weight/dimensions snapshot
     master_materials = {
         m["material_id"]: m
         for m in sheets_client.read_rows("Material_Master")
@@ -133,22 +126,20 @@ def create_daily_entry(current_user):
         mat_meta = master_materials[mat_id]
         mat_name = mat_meta.get("material_name", row.get("material_name", mat_id))
 
-        # Weight per sheet snapshot from Master or manual
         try:
             unit_weight = float(mat_meta.get("weight_per_sheet", row.get("weight_per_sheet", 0)))
         except (ValueError, TypeError):
             unit_weight = 0.0
 
-        # Current stock balance
-        cur_balance_info = get_current_stock_balance(side, mat_id)
+        # Current stock balance from unified Material_Stock
+        cur_balance_info = get_current_stock_balance(mat_id)
         if cur_balance_info["balance"] is None:
-            # Material not yet configured
             if row.get("opening_stock") is not None:
                 op_stock = float(row.get("opening_stock"))
             else:
                 return jsonify({
                     "success": False,
-                    "error": f"Material '{mat_name}' has no configured opening stock. Please set opening stock first."
+                    "error": f"Material '{mat_name}' has no configured opening stock. Please enter opening stock."
                 }), 400
         else:
             op_stock = cur_balance_info["balance"]
@@ -161,7 +152,6 @@ def create_daily_entry(current_user):
         except ValueError as e:
             return jsonify({"success": False, "error": f"Row {idx} contains non-numeric inputs: {e}"}), 400
 
-        # Validate closing stock calculation
         try:
             calc = calculate_material_entry(
                 opening_stock=op_stock,
@@ -187,7 +177,6 @@ def create_daily_entry(current_user):
             "entry_date": entry_date,
             "job_number": job_number,
             "shift": shift,
-            "side": side,
             "material_id": mat_id,
             "material_name": mat_name,
             "opening_stock": calc["opening_stock"],
@@ -207,7 +196,6 @@ def create_daily_entry(current_user):
         }
         saved_entries.append(entry_row)
 
-        # Prepare stock ledger update
         stock_updates.append({
             "stock_id": f"STK-{uuid.uuid4().hex[:6].upper()}",
             "date": entry_date,
@@ -222,12 +210,10 @@ def create_daily_entry(current_user):
             "updated_at": now
         })
 
-        # Prepare scrap record if scrap > 0
         if calc["scrap_weight"] > 0 or calc["total_input_weight"] > 0:
             scrap_records.append({
                 "scrap_id": f"SCRAP-{uuid.uuid4().hex[:6].upper()}",
                 "date": entry_date,
-                "side": side,
                 "material_id": mat_id,
                 "material_name": mat_name,
                 "total_input_weight": calc["total_input_weight"],
@@ -242,27 +228,25 @@ def create_daily_entry(current_user):
         total_punching_in_batch += used_qty
         total_cutbit_in_batch += cutbit_val
 
-    # Batch write to Google Sheets
+    # Batch append to unified Google Sheets
     sheets_client.append_rows_batch("Daily_Entries", saved_entries)
-    sheets_client.append_rows_batch(stock_sheet, stock_updates)
+    sheets_client.append_rows_batch("Material_Stock", stock_updates)
     if scrap_records:
         sheets_client.append_rows_batch("Scrap_Records", scrap_records)
 
-    # Sync Production_Summary for the date
     _sync_production_summary(entry_date)
 
-    # Record Audit Log
     record_audit_log(
         user_id=current_user["user_id"],
         action="CREATE_DAILY_ENTRY",
         record_type="Daily_Entries",
         record_id=",".join(e["entry_id"] for e in saved_entries),
-        new_value=f"{side} Side: {len(saved_entries)} materials recorded by {employee_name} on {entry_date}"
+        new_value=f"{len(saved_entries)} materials recorded by {employee_name} on {entry_date}"
     )
 
     return jsonify({
         "success": True,
-        "message": f"Successfully recorded {len(saved_entries)} material entries for {side} Side.",
+        "message": f"Successfully recorded {len(saved_entries)} material entries.",
         "entries": saved_entries
     }), 201
 
@@ -289,7 +273,6 @@ def update_daily_entry(current_user, entry_id):
         if field in data:
             updated[field] = data[field]
 
-    # Recalculate if used, received, or scrap changed
     if any(k in data for k in ["used_quantity", "stock_received", "scrap_weight", "weight_per_sheet"]):
         op_stock = float(data.get("opening_stock", target.get("opening_stock", 0)))
         used_q = float(data.get("used_quantity", target.get("used_quantity", 0)))
@@ -322,7 +305,6 @@ def update_daily_entry(current_user, entry_id):
     updated["updated_at"] = now
     sheets_client.update_row_by_id("Daily_Entries", "entry_id", entry_id, updated)
 
-    # Sync Production_Summary for that date
     _sync_production_summary(updated.get("entry_date"))
 
     record_audit_log(
@@ -342,8 +324,8 @@ def update_daily_entry(current_user, entry_id):
 
 def _sync_production_summary(target_date: str):
     """
-    Re-aggregates Left and Right punching and cutbit quantities for target_date
-    into Sheet 6: Production_Summary without double counting.
+    Re-aggregates punching and cutbit quantities for target_date
+    into Sheet 5: Production_Summary without double counting.
     """
     if not target_date:
         return
@@ -351,17 +333,11 @@ def _sync_production_summary(target_date: str):
     all_entries = sheets_client.read_rows("Daily_Entries")
     date_entries = [e for e in all_entries if e.get("entry_date") == target_date]
 
-    left_punch = sum(
-        float(e.get("used_quantity", 0)) for e in date_entries if e.get("side") == "Left"
+    total_punch = sum(
+        float(e.get("used_quantity", 0)) for e in date_entries
     )
-    right_punch = sum(
-        float(e.get("used_quantity", 0)) for e in date_entries if e.get("side") == "Right"
-    )
-    left_cut = sum(
-        float(e.get("cutbit_used", 0)) for e in date_entries if e.get("side") == "Left"
-    )
-    right_cut = sum(
-        float(e.get("cutbit_used", 0)) for e in date_entries if e.get("side") == "Right"
+    total_cut = sum(
+        float(e.get("cutbit_used", 0)) for e in date_entries
     )
 
     now = datetime.now(timezone.utc).isoformat()
@@ -371,12 +347,8 @@ def _sync_production_summary(target_date: str):
     summary_data = {
         "production_id": existing_record.get("production_id") if existing_record else f"PROD-{uuid.uuid4().hex[:6].upper()}",
         "date": target_date,
-        "left_total_punching": left_punch,
-        "right_total_punching": right_punch,
-        "overall_total_punching": left_punch + right_punch,
-        "left_cutbit": left_cut,
-        "right_cutbit": right_cut,
-        "overall_cutbit": left_cut + right_cut,
+        "total_punching": total_punch,
+        "total_cutbit": total_cut,
         "remarks": f"Daily total calculated from {len(date_entries)} transactions",
         "created_at": existing_record.get("created_at") if existing_record else now
     }

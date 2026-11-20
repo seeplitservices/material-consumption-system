@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import Sidebar from './components/Sidebar';
@@ -7,7 +7,7 @@ import WeightCalculator from './components/WeightCalculator';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import DailyEntry from './pages/DailyEntry';
-import { LeftStock, RightStock } from './pages/StockView';
+import MaterialStock from './pages/MaterialStock';
 import MaterialMaster from './pages/MaterialMaster';
 import ScrapAnalysis from './pages/ScrapAnalysis';
 import ProductionSummary from './pages/ProductionSummary';
@@ -17,11 +17,20 @@ import UserManagement from './pages/UserManagement';
 import Settings from './pages/Settings';
 
 function AppContent() {
-  const { user, loading, isAdmin } = useAuth();
-  const [currentPage, setCurrentPage] = useState('dashboard');
+  const { user, loading, isDirector } = useAuth();
+  const [currentPage, setCurrentPage] = useState(() => (isDirector ? 'dashboard' : 'daily-entry'));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isCalcOpen, setIsCalcOpen] = useState(false);
   const [isRareModalOpen, setIsRareModalOpen] = useState(false);
+
+  // Strict role lock: Data Entry Users (Operators) can ONLY ever access daily-entry
+  useEffect(() => {
+    if (!loading && user) {
+      if (!isDirector && currentPage !== 'daily-entry') {
+        setCurrentPage('daily-entry');
+      }
+    }
+  }, [isDirector, currentPage, user, loading]);
 
   if (loading) {
     return (
@@ -39,8 +48,7 @@ function AppContent() {
   const PAGE_TITLES = {
     'dashboard': 'Manufacturing Executive Dashboard',
     'daily-entry': 'Daily Material Punching & Scrap Entry',
-    'left-stock': 'Left Side Inventory Ledger',
-    'right-stock': 'Right Side Inventory Ledger',
+    'material-stock': 'Material Inventory Stock Ledger',
     'material-master': 'Material Master Specifications',
     'scrap-analysis': 'Scrap Generation & Wastage Analytics',
     'production-summary': 'Daily Punching & Cutbit Production Summary',
@@ -57,10 +65,13 @@ function AppContent() {
       {/* Sidebar Navigation */}
       <Sidebar
         currentPage={currentPage}
-        onNavigate={setCurrentPage}
+        onNavigate={(page) => {
+          if (!isDirector && page !== 'daily-entry') return;
+          setCurrentPage(page);
+        }}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-        isAdmin={isAdmin}
+        isDirector={isDirector}
       />
 
       {/* Main Content Area */}
@@ -71,32 +82,41 @@ function AppContent() {
         />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
-          {currentPage === 'dashboard' && (
-            <Dashboard onNavigateToEntry={() => setCurrentPage('daily-entry')} />
-          )}
-          {currentPage === 'daily-entry' && (
+          {/* Operator only ever renders DailyEntry */}
+          {!isDirector ? (
             <DailyEntry
               onSaved={() => {}}
-              onOpenRareModal={() => {
-                setCurrentPage('material-master');
-                setIsRareModalOpen(true);
-              }}
+              onOpenRareModal={() => {}}
             />
+          ) : (
+            <>
+              {currentPage === 'dashboard' && (
+                <Dashboard onNavigateToEntry={() => setCurrentPage('daily-entry')} />
+              )}
+              {currentPage === 'daily-entry' && (
+                <DailyEntry
+                  onSaved={() => {}}
+                  onOpenRareModal={() => {
+                    setCurrentPage('material-master');
+                    setIsRareModalOpen(true);
+                  }}
+                />
+              )}
+              {currentPage === 'material-stock' && <MaterialStock />}
+              {currentPage === 'material-master' && (
+                <MaterialMaster
+                  isRareModalOpen={isRareModalOpen}
+                  onToggleRareModal={setIsRareModalOpen}
+                />
+              )}
+              {currentPage === 'scrap-analysis' && <ScrapAnalysis />}
+              {currentPage === 'production-summary' && <ProductionSummary />}
+              {currentPage === 'historical-records' && <HistoricalRecords />}
+              {currentPage === 'reports' && <Reports />}
+              {currentPage === 'user-management' && <UserManagement />}
+              {currentPage === 'settings' && <Settings />}
+            </>
           )}
-          {currentPage === 'left-stock' && <LeftStock />}
-          {currentPage === 'right-stock' && <RightStock />}
-          {currentPage === 'material-master' && (
-            <MaterialMaster
-              isRareModalOpen={isRareModalOpen}
-              onToggleRareModal={setIsRareModalOpen}
-            />
-          )}
-          {currentPage === 'scrap-analysis' && <ScrapAnalysis />}
-          {currentPage === 'production-summary' && <ProductionSummary />}
-          {currentPage === 'historical-records' && <HistoricalRecords />}
-          {currentPage === 'reports' && <Reports />}
-          {currentPage === 'user-management' && <UserManagement />}
-          {currentPage === 'settings' && <Settings />}
         </main>
       </div>
 

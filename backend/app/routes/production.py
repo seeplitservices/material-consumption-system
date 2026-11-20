@@ -1,16 +1,18 @@
 """
-Cutbit and Daily Punching Production Summary Routes
+Cutbit and Daily Punching Production Summary Routes (Unified Factory Operations)
 """
 
 from flask import Blueprint, jsonify, request
+from app.auth_helper import director_required, token_required
 from app.calculator import round_display
 from app.sheets_client import sheets_client
 
 production_bp = Blueprint("production", __name__)
 
 @production_bp.route("", methods=["GET"])
-def get_production_summary():
-    """Returns daily production summary records with date filtering."""
+@director_required
+def get_production_summary(current_user):
+    """Returns factory daily production summary records with date filtering."""
     date_filter = request.args.get("date")
     start_date = request.args.get("start_date")
     end_date = request.args.get("end_date")
@@ -28,23 +30,15 @@ def get_production_summary():
             continue
 
         try:
-            lp = float(r.get("left_total_punching", 0))
-            rp = float(r.get("right_total_punching", 0))
-            op = float(r.get("overall_total_punching", 0))
-            lc = float(r.get("left_cutbit", 0))
-            rc = float(r.get("right_cutbit", 0))
-            oc = float(r.get("overall_cutbit", 0))
+            tp = float(r.get("total_punching", 0))
+            tc = float(r.get("total_cutbit", 0))
         except (ValueError, TypeError):
-            lp = rp = op = lc = rc = oc = 0.0
+            tp = tc = 0.0
 
         filtered.append({
             **r,
-            "left_total_punching_display": round_display(lp),
-            "right_total_punching_display": round_display(rp),
-            "overall_total_punching_display": round_display(op),
-            "left_cutbit_display": round_display(lc),
-            "right_cutbit_display": round_display(rc),
-            "overall_cutbit_display": round_display(oc)
+            "total_punching_display": round_display(tp),
+            "total_cutbit_display": round_display(tc)
         })
 
     filtered.sort(key=lambda x: x.get("date", ""), reverse=True)

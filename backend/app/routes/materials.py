@@ -1,12 +1,12 @@
 """
-Material Master API Routes: Standard & Rare Material Management, Weight Calculation
+Material Master API Routes: Unified Factory Material Management & Weight Calculation
 """
 
 import uuid
 from datetime import datetime, timezone
 from flask import Blueprint, jsonify, request
 
-from app.auth_helper import admin_required, record_audit_log, token_required
+from app.auth_helper import director_required, record_audit_log, token_required
 from app.calculator import calculate_sheet_weight, round_display
 from app.config import Config
 from app.sheets_client import sheets_client
@@ -15,9 +15,8 @@ materials_bp = Blueprint("materials", __name__)
 
 @materials_bp.route("", methods=["GET"])
 def get_materials():
-    """Returns all materials with optional filters (side, active, type)."""
-    side_filter = request.args.get("side")
-    type_filter = request.args.get("type")  # Standard or Rare
+    """Returns all materials with optional type filter (Standard or Rare)."""
+    type_filter = request.args.get("type")
     include_inactive = request.args.get("include_inactive", "false").lower() == "true"
 
     rows = sheets_client.read_rows("Material_Master")
@@ -25,9 +24,6 @@ def get_materials():
     for r in rows:
         is_active = r.get("is_active") in ("TRUE", "True", True, "1")
         if not include_inactive and not is_active:
-            continue
-
-        if side_filter and r.get("side") not in [side_filter, "Both"]:
             continue
 
         if type_filter and r.get("material_type") != type_filter:
@@ -41,7 +37,6 @@ def get_materials():
         results.append({
             "material_id": r.get("material_id"),
             "material_name": r.get("material_name"),
-            "side": r.get("side"),
             "category": r.get("category"),
             "material_type": r.get("material_type", "Standard"),
             "length_mm": float(r.get("length_mm")) if r.get("length_mm") else None,
@@ -107,30 +102,25 @@ def preview_weight():
 def create_material(current_user):
     """
     Creates a new material (Standard or Rare).
-    Employees can add rare materials on the day of usage.
+    Both Operators and Directors can register rare materials on the day of usage.
     """
     data = request.get_json() or {}
     material_name = data.get("material_name", "").strip()
-    side = data.get("side", "Left")
     category = data.get("category", "General").strip()
-    material_type = data.get("material_type", "Standard")  # Standard or Rare
+    material_type = data.get("material_type", "Standard")
     unit = data.get("unit", "Sheets")
-    opening_stock = data.get("opening_stock")  # optional initial stock
+    opening_stock = data.get("opening_stock")
     remarks = data.get("remarks", "").strip()
 
     if not material_name:
         return jsonify({"success": False, "error": "Material Name is required."}), 400
 
-    if side not in ["Left", "Right", "Both"]:
-        return jsonify({"success": False, "error": "Side must be Left, Right, or Both."}), 400
-
-    # Prevent duplicate material by name and side
     existing_materials = sheets_client.read_rows("Material_Master")
     for m in existing_materials:
-        if m.get("material_name", "").strip().lower() == material_name.lower() and m.get("side") in [side, "Both"]:
+        if m.get("material_name", "").strip().lower() == material_name.lower():
             return jsonify({
                 "success": False,
-                "error": f"A material named '{material_name}' already exists for {side} Side."
+                "error": f"A material named '{material_name}' already exists."
             }), 400
 
     length_mm = data.get("length_mm")
@@ -159,14 +149,12 @@ def create_material(current_user):
         }), 400
 
     now = datetime.now(timezone.utc).isoformat()
-    side_code = "L" if side == "Left" else ("R" if side == "Right" else "B")
-    prefix = "MAT-R-" if material_type == "Rare" else f"MAT-{side_code}-"
+    prefix = "MAT-R-" if material_type == "Rare" else "MAT-"
     material_id = f"{prefix}{uuid.uuid4().hex[:6].upper()}"
 
     new_record = {
         "material_id": material_id,
         "material_name": material_name,
-        "side": side,
         "category": category,
         "material_type": material_type,
         "length_mm": length_mm if length_mm is not None else "",
@@ -182,7 +170,6 @@ def create_material(current_user):
 
     sheets_client.append_row("Material_Master", new_record)
 
-    # If opening stock is provided, seed into the appropriate stock ledger
     if opening_stock is not None and str(opening_stock).strip() != "":
         try:
             stock_num = float(opening_stock)
@@ -196,13 +183,10 @@ def create_material(current_user):
                 "punching_stock": 0,
                 "closing_stock": stock_num,
                 "remarks": f"Initial Stock recorded upon material creation. {remarks}".strip(),
-                "updated_by": current_user.get("name", "Employee"),
+                "updated_by": current_user.get("name", "Operator"),
                 "updated_at": now
             }
-            if side in ["Left", "Both"]:
-                sheets_client.append_row("Left_Stock", stock_record)
-            if side in ["Right", "Both"]:
-                sheets_client.append_row("Right_Stock", stock_record)
+            sheets_client.append_row("Material_Stock", stock_record)
         except ValueError:
             pass
 
@@ -224,9 +208,9 @@ def create_material(current_user):
     }), 201
 
 @materials_bp.route("/<material_id>", methods=["PUT"])
-@admin_required
+@director_required
 def update_material(current_user, material_id):
-    """Admin updates material specifications. Recalculates weight per sheet."""
+    """Director updates material specifications."""
     data = request.get_json() or {}
     materials = sheets_client.read_rows("Material_Master")
     target = None
@@ -241,8 +225,6 @@ def update_material(current_user, material_id):
     updated = dict(target)
     if "material_name" in data:
         updated["material_name"] = data["material_name"].strip()
-    if "side" in data and data["side"] in ["Left", "Right", "Both"]:
-        updated["side"] = data["side"]
     if "category" in data:
         updated["category"] = data["category"].strip()
     if "is_active" in data:
@@ -250,7 +232,6 @@ def update_material(current_user, material_id):
     if "unit" in data:
         updated["unit"] = data["unit"]
 
-    # If dimensions or density changed, recalculate weight
     l = data.get("length_mm", target.get("length_mm"))
     w = data.get("width_mm", target.get("width_mm"))
     t = data.get("thickness_mm", target.get("thickness_mm"))
@@ -288,9 +269,9 @@ def update_material(current_user, material_id):
     })
 
 @materials_bp.route("/<material_id>", methods=["DELETE"])
-@admin_required
+@director_required
 def delete_material(current_user, material_id):
-    """Soft deletes a material by marking is_active = FALSE."""
+    """Director soft deletes a material."""
     materials = sheets_client.read_rows("Material_Master")
     target = None
     for m in materials:

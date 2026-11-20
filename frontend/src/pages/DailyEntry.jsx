@@ -4,11 +4,10 @@ import {
   Trash2,
   Save,
   RotateCcw,
+  Sparkles,
+  ClipboardPenLine,
   CheckCircle2,
-  AlertTriangle,
-  Layers,
-  Scale,
-  Sparkles
+  AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -20,17 +19,16 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
   // Header State
   const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10));
   const [shift, setShift] = useState('Day');
-  const [side, setSide] = useState('Left');
   const [jobNumber, setJobNumber] = useState('');
   const [employeeName, setEmployeeName] = useState(user?.name || '');
   const [generalRemarks, setGeneralRemarks] = useState('');
 
-  // Available Materials Cache
+  // Available Materials Cache & Unified Stock Balances
   const [materials, setMaterials] = useState([]);
   const [stockBalances, setStockBalances] = useState({});
   const [loadingMats, setLoadingMats] = useState(false);
 
-  // Dynamic Rows State
+  // Dynamic Multi-Row Entry Table State
   const [rows, setRows] = useState([createEmptyRow()]);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
@@ -56,13 +54,13 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
     };
   }
 
-  // Load materials and current stock balances whenever side changes
+  // Load all materials and unified stock inventory
   const loadMaterialsAndStock = async () => {
     setLoadingMats(true);
     try {
       const [matRes, stockRes] = await Promise.all([
-        api.get(`/api/materials?side=${side}`),
-        api.get(`/api/stock/${side.toLowerCase()}`)
+        api.get('/api/materials'),
+        api.get('/api/stock')
       ]);
 
       if (matRes.success) setMaterials(matRes.materials || []);
@@ -86,7 +84,7 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
 
   useEffect(() => {
     loadMaterialsAndStock();
-  }, [side]);
+  }, []);
 
   // Handle Material Selection on a Row
   const handleMaterialChange = (rowId, matId) => {
@@ -126,7 +124,7 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
     );
   };
 
-  // Handle Numeric Field Changes on a Row
+  // Handle Field Changes
   const handleRowFieldChange = (rowId, field, value) => {
     setRows(prevRows =>
       prevRows.map(row => {
@@ -139,13 +137,9 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
         const unitWt = parseFloat(updated.weight_per_sheet) || 0;
         const scrap = parseFloat(updated.scrap_weight) || 0;
 
-        // Closing Stock = Opening Stock + Stock Received - Sheets Used
         updated.closing_stock = op + rec - used;
-        // Total Input Weight = Sheets Used × Weight per Sheet
         updated.total_input_weight = used * unitWt;
-        // Net Consumption = Total Input Weight - Scrap Weight
         updated.net_consumption = Math.max(0, updated.total_input_weight - scrap);
-        // Wastage % = (Scrap Weight / Total Input Weight) * 100
         updated.wastage_percentage =
           updated.total_input_weight > 0 ? (scrap / updated.total_input_weight) * 100 : 0;
 
@@ -174,11 +168,10 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
   const batchWastagePct =
     totalMaterialWeight > 0 ? (totalScrapWeight / totalMaterialWeight) * 100 : 0;
 
-  // Submit Transaction
+  // Submit Daily Transaction Batch
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // Validation
     const invalidRows = rows.filter(r => !r.material_id);
     if (invalidRows.length > 0) {
       setToast({ type: 'warning', message: 'Please select a material for all rows.' });
@@ -199,7 +192,6 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
       const payload = {
         entry_date: entryDate,
         shift,
-        side,
         job_number: jobNumber,
         remarks: generalRemarks,
         rows: rows.map(r => ({
@@ -220,9 +212,8 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
       if (res.success) {
         setToast({
           type: 'success',
-          message: `Successfully recorded ${res.entries.length} entries in Google Sheets!`
+          message: `Successfully recorded ${res.entries.length} material entries in Google Sheets!`
         });
-        // Reset rows
         setRows([createEmptyRow()]);
         setJobNumber('');
         setGeneralRemarks('');
@@ -244,30 +235,35 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
       <form onSubmit={handleSubmit} className="space-y-6">
         <div className="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs">
           <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100 dark:border-slate-700/80">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Daily Material Consumption & Punching Entry
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Record factory daily sheet usage, scrap weights, and update inventory in Google Sheets.
-              </p>
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-sky-50 dark:bg-sky-950 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-900">
+                <ClipboardPenLine className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Daily Material Consumption & Punching Entry
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Record daily factory sheet punching, off-cut cutbit, and scrap weight into Google Sheets.
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+            {onOpenRareModal && (
               <button
                 type="button"
                 onClick={onOpenRareModal}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 hover:bg-sky-100 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border border-purple-300 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 hover:bg-purple-100 transition-colors"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 <span>+ Add Rare Material</span>
               </button>
-            </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-xs">
             <div>
               <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Entry Date
+                Entry Date *
               </label>
               <input
                 type="date"
@@ -280,36 +276,12 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
 
             <div>
               <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Side Operation
-              </label>
-              <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-700">
-                {['Left', 'Right'].map(s => (
-                  <button
-                    type="button"
-                    key={s}
-                    onClick={() => setSide(s)}
-                    className={`py-1.5 rounded-lg font-semibold text-center transition-colors ${
-                      side === s
-                        ? s === 'Left'
-                          ? 'bg-sky-600 text-white shadow-xs'
-                          : 'bg-emerald-600 text-white shadow-xs'
-                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                    }`}
-                  >
-                    {s} Side
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Shift
+                Shift *
               </label>
               <select
                 value={shift}
                 onChange={e => setShift(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium"
               >
                 <option value="Day">Day Shift</option>
                 <option value="Night">Night Shift</option>
@@ -318,7 +290,7 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
 
             <div>
               <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Job / Project Reference (Optional)
+                Job / Project Reference
               </label>
               <input
                 type="text"
@@ -331,7 +303,7 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
 
             <div>
               <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Employee Name
+                Operator / Employee Name *
               </label>
               <input
                 type="text"
@@ -361,7 +333,7 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
         <div className="bg-white dark:bg-slate-800/90 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-xs">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-              Material Transactions ({rows.length} rows)
+              Material Punching Rows ({rows.length})
             </h3>
             <button
               type="button"
@@ -378,7 +350,7 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                   <th className="py-3 px-2 w-8 text-center">#</th>
-                  <th className="py-3 px-3 min-w-[220px]">Material Selection</th>
+                  <th className="py-3 px-3 min-w-[240px]">Material Specification</th>
                   <th className="py-3 px-2 w-24">Opening</th>
                   <th className="py-3 px-2 w-24">Received</th>
                   <th className="py-3 px-2 w-28">Used Sheets</th>
@@ -396,7 +368,7 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
                   <tr key={row.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
                     <td className="py-3 px-2 text-center text-slate-400 font-sans">{index + 1}</td>
                     
-                    {/* Material Dropdown */}
+                    {/* Unified Material Dropdown */}
                     <td className="py-3 px-3 font-sans">
                       <select
                         value={row.material_id}
@@ -404,7 +376,7 @@ export default function DailyEntry({ onSaved, onOpenRareModal }) {
                         required
                         className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 focus:ring-1 focus:ring-sky-500"
                       >
-                        <option value="">-- Select {side} Material --</option>
+                        <option value="">-- Select Material --</option>
                         {materials.map(m => (
                           <option key={m.material_id} value={m.material_id}>
                             {m.material_name} ({m.thickness_mm}mm &bull; {m.weight_per_sheet_display}kg)

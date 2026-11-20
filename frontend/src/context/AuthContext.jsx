@@ -69,10 +69,12 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const isAdmin = user?.role === 'Admin';
+  // Director / Admin role check
+  const isDirector = user?.role === 'Director' || user?.role === 'Admin';
+  const isOperator = !isDirector;
 
   return (
-    <AuthContext.Provider value={{ user, token, isAdmin, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, token, isDirector, isOperator, isAdmin: isDirector, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );

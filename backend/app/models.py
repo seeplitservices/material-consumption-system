@@ -1,5 +1,6 @@
 """
 Data Models, Google Sheets Schema Definitions, and Preconfigured Master Data
+Unified factory inventory without Left / Right side split.
 """
 
 from datetime import datetime, timezone
@@ -9,7 +10,6 @@ SHEET_SCHEMAS = {
     "Material_Master": [
         "material_id",
         "material_name",
-        "side",
         "category",
         "material_type",
         "length_mm",
@@ -27,7 +27,6 @@ SHEET_SCHEMAS = {
         "entry_date",
         "job_number",
         "shift",
-        "side",
         "material_id",
         "material_name",
         "opening_stock",
@@ -45,20 +44,7 @@ SHEET_SCHEMAS = {
         "created_at",
         "updated_at"
     ],
-    "Left_Stock": [
-        "stock_id",
-        "date",
-        "material_id",
-        "material_name",
-        "opening_stock",
-        "stock_received",
-        "punching_stock",
-        "closing_stock",
-        "remarks",
-        "updated_by",
-        "updated_at"
-    ],
-    "Right_Stock": [
+    "Material_Stock": [
         "stock_id",
         "date",
         "material_id",
@@ -74,7 +60,6 @@ SHEET_SCHEMAS = {
     "Scrap_Records": [
         "scrap_id",
         "date",
-        "side",
         "material_id",
         "material_name",
         "total_input_weight",
@@ -88,19 +73,14 @@ SHEET_SCHEMAS = {
     "Production_Summary": [
         "production_id",
         "date",
-        "left_total_punching",
-        "right_total_punching",
-        "overall_total_punching",
-        "left_cutbit",
-        "right_cutbit",
-        "overall_cutbit",
+        "total_punching",
+        "total_cutbit",
         "remarks",
         "created_at"
     ],
     "Stock_Adjustments": [
         "adjustment_id",
         "date",
-        "side",
         "material_id",
         "adjustment_quantity",
         "adjustment_reason",
@@ -133,13 +113,11 @@ SHEET_SCHEMAS = {
     ]
 }
 
-# Preconfigured Standard Materials
+# Preconfigured Factory Standard Materials (Unified Sheet)
 PRECONFIGURED_MATERIALS = [
-    # Left Side Materials
     {
-        "material_id": "MAT-L-01",
+        "material_id": "MAT-01",
         "material_name": "1.2 CRCA Sheet (1250 × 2500)",
-        "side": "Left",
         "category": "CRCA",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -152,9 +130,8 @@ PRECONFIGURED_MATERIALS = [
         "initial_stock": 135
     },
     {
-        "material_id": "MAT-L-02",
+        "material_id": "MAT-02",
         "material_name": "1.5 CRCA Sheet (1250 × 2500)",
-        "side": "Left",
         "category": "CRCA",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -167,9 +144,8 @@ PRECONFIGURED_MATERIALS = [
         "initial_stock": 291
     },
     {
-        "material_id": "MAT-L-03",
+        "material_id": "MAT-03",
         "material_name": "2.0 CRCA Sheet (1250 × 2500)",
-        "side": "Left",
         "category": "CRCA",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -182,9 +158,8 @@ PRECONFIGURED_MATERIALS = [
         "initial_stock": 93
     },
     {
-        "material_id": "MAT-L-04",
+        "material_id": "MAT-04",
         "material_name": "2.0 HRPO Sheet (1250 × 2500)",
-        "side": "Left",
         "category": "HRPO",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -197,9 +172,8 @@ PRECONFIGURED_MATERIALS = [
         "initial_stock": None  # "Not Configured"
     },
     {
-        "material_id": "MAT-L-05",
+        "material_id": "MAT-05",
         "material_name": "3.0 HRPO Sheet (1250 × 2500)",
-        "side": "Left",
         "category": "HRPO",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -212,9 +186,8 @@ PRECONFIGURED_MATERIALS = [
         "initial_stock": 3
     },
     {
-        "material_id": "MAT-L-06",
+        "material_id": "MAT-06",
         "material_name": "5.0 HR Sheet (1250 × 2500)",
-        "side": "Left",
         "category": "HR",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -227,9 +200,8 @@ PRECONFIGURED_MATERIALS = [
         "initial_stock": 4
     },
     {
-        "material_id": "MAT-L-07",
+        "material_id": "MAT-07",
         "material_name": "CP-1.6 Sheet (1250 × 2500)",
-        "side": "Left",
         "category": "CP",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -241,12 +213,9 @@ PRECONFIGURED_MATERIALS = [
         "is_active": True,
         "initial_stock": 4
     },
-
-    # Right Side Materials
     {
-        "material_id": "MAT-R-01",
+        "material_id": "MAT-08",
         "material_name": "1.0 GP Sheet (1250 × 2500)",
-        "side": "Right",
         "category": "GP",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -259,9 +228,8 @@ PRECONFIGURED_MATERIALS = [
         "initial_stock": None  # "Not Configured"
     },
     {
-        "material_id": "MAT-R-02",
+        "material_id": "MAT-09",
         "material_name": "1.2 GP Sheet (1250 × 2500)",
-        "side": "Right",
         "category": "GP",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -274,9 +242,8 @@ PRECONFIGURED_MATERIALS = [
         "initial_stock": 16
     },
     {
-        "material_id": "MAT-R-03",
+        "material_id": "MAT-10",
         "material_name": "1.5 GP Sheet (1250 × 2500)",
-        "side": "Right",
         "category": "GP",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -289,9 +256,8 @@ PRECONFIGURED_MATERIALS = [
         "initial_stock": 13
     },
     {
-        "material_id": "MAT-R-04",
+        "material_id": "MAT-11",
         "material_name": "1.6 / 2.0 GP Sheet (1250 × 2500)",
-        "side": "Right",
         "category": "GP",
         "material_type": "Standard",
         "length_mm": 1250,
@@ -304,9 +270,8 @@ PRECONFIGURED_MATERIALS = [
         "initial_stock": None  # "Not Configured"
     },
     {
-        "material_id": "MAT-R-05",
+        "material_id": "MAT-12",
         "material_name": "2.0 GP Sheet (1250 × 2500)",
-        "side": "Right",
         "category": "GP",
         "material_type": "Standard",
         "length_mm": 1250,

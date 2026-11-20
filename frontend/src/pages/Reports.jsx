@@ -4,7 +4,6 @@ import {
   Download,
   Printer,
   Calendar,
-  Layers,
   Sparkles,
   TrendingUp,
   Percent,
@@ -17,7 +16,7 @@ import { exportToCSV, exportToExcel, printPDFReport } from '../utils/exportUtils
 import { api } from '../services/api';
 
 export default function Reports() {
-  const [reportType, setReportType] = useState('daily'); // daily, monthly, side, rare
+  const [reportType, setReportType] = useState('daily'); // daily, monthly, rare
   const [dateFilter, setDateFilter] = useState('');
   const [monthFilter, setMonthFilter] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,7 +24,6 @@ export default function Reports() {
 
   const [dailyData, setDailyData] = useState(null);
   const [monthlyData, setMonthlyData] = useState(null);
-  const [sideData, setSideData] = useState(null);
   const [rareData, setRareData] = useState(null);
 
   const fetchReport = async () => {
@@ -40,9 +38,6 @@ export default function Reports() {
         const query = monthFilter ? `?month=${monthFilter}` : '';
         const res = await api.get(`/api/reports/monthly${query}`);
         if (res.success) setMonthlyData(res);
-      } else if (reportType === 'side') {
-        const res = await api.get('/api/reports/side-comparison');
-        if (res.success) setSideData(res);
       } else if (reportType === 'rare') {
         const res = await api.get('/api/reports/rare-materials');
         if (res.success) setRareData(res);
@@ -61,7 +56,6 @@ export default function Reports() {
   const REPORT_TABS = [
     { id: 'daily', label: 'Daily Consumption Report', icon: Calendar },
     { id: 'monthly', label: 'Monthly Summary Report', icon: TrendingUp },
-    { id: 'side', label: 'Left vs Right Operations', icon: Layers },
     { id: 'rare', label: 'Rare Materials History', icon: Sparkles },
   ];
 
@@ -194,7 +188,6 @@ export default function Reports() {
               <DataTable
                 columns={[
                   { key: 'entry_date', label: 'Date', className: 'w-24 font-mono text-xs' },
-                  { key: 'side', label: 'Side', className: 'w-16' },
                   { key: 'job_number', label: 'Job Ref' },
                   { key: 'material_name', label: 'Material' },
                   { key: 'used_quantity', label: 'Sheets' },
@@ -202,7 +195,8 @@ export default function Reports() {
                   { key: 'total_input_weight', label: 'Input Wt (kg)' },
                   { key: 'scrap_weight', label: 'Scrap (kg)' },
                   { key: 'net_consumption', label: 'Net (kg)' },
-                  { key: 'wastage_percentage', label: 'Wastage %' }
+                  { key: 'wastage_percentage', label: 'Wastage %' },
+                  { key: 'employee', label: 'Operator' }
                 ]}
                 data={dailyData.records || []}
                 title="Daily Material Consumption Breakdown"
@@ -214,13 +208,13 @@ export default function Reports() {
                         'Daily Material Consumption Report',
                         [
                           { key: 'entry_date', label: 'Date' },
-                          { key: 'side', label: 'Side' },
                           { key: 'material_name', label: 'Material' },
                           { key: 'used_quantity', label: 'Sheets' },
                           { key: 'total_input_weight', label: 'Input (kg)' },
                           { key: 'scrap_weight', label: 'Scrap (kg)' },
                           { key: 'net_consumption', label: 'Net (kg)' },
-                          { key: 'wastage_percentage', label: 'Wastage %' }
+                          { key: 'wastage_percentage', label: 'Wastage %' },
+                          { key: 'employee', label: 'Operator' }
                         ],
                         dailyData.records || [],
                         dailyData.summary
@@ -278,7 +272,6 @@ export default function Reports() {
                 columns={[
                   { key: 'material_id', label: 'Material ID', className: 'w-24 font-mono text-xs' },
                   { key: 'material_name', label: 'Material Name' },
-                  { key: 'side', label: 'Side' },
                   { key: 'used_sheets', label: 'Total Used Sheets' },
                   { key: 'input_weight', label: 'Total Input (kg)' },
                   { key: 'scrap_weight', label: 'Total Scrap (kg)' },
@@ -295,7 +288,6 @@ export default function Reports() {
                         'Monthly Material Consumption Summary',
                         [
                           { key: 'material_name', label: 'Material' },
-                          { key: 'side', label: 'Side' },
                           { key: 'used_sheets', label: 'Sheets' },
                           { key: 'input_weight', label: 'Input (kg)' },
                           { key: 'scrap_weight', label: 'Scrap (kg)' },
@@ -316,72 +308,13 @@ export default function Reports() {
             </div>
           )}
 
-          {/* TAB 3: SIDE COMPARISON */}
-          {reportType === 'side' && sideData && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {['left_side', 'right_side'].map(sideKey => {
-                const s = sideData[sideKey];
-                const isLeft = sideKey === 'left_side';
-                return (
-                  <div
-                    key={sideKey}
-                    className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 shadow-xs space-y-4"
-                  >
-                    <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-700">
-                      <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${
-                        isLeft
-                          ? 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300'
-                          : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
-                      }`}>
-                        {s.side} Side Operations
-                      </span>
-                      <span className="text-xs text-slate-400 font-mono">
-                        {s.transactions_count} recorded transactions
-                      </span>
-                    </div>
-
-                    <div className="space-y-3 text-xs">
-                      <div className="flex justify-between py-1.5 border-b border-slate-50 dark:border-slate-700/50">
-                        <span className="text-slate-500">Sheets Punched:</span>
-                        <span className="font-bold font-mono text-slate-900 dark:text-slate-100">{s.sheets_punched} sheets</span>
-                      </div>
-                      <div className="flex justify-between py-1.5 border-b border-slate-50 dark:border-slate-700/50">
-                        <span className="text-slate-500">Total Input Weight:</span>
-                        <span className="font-bold font-mono text-slate-900 dark:text-slate-100">{s.input_weight_kg} kg</span>
-                      </div>
-                      <div className="flex justify-between py-1.5 border-b border-slate-50 dark:border-slate-700/50">
-                        <span className="text-slate-500">Total Scrap Generated:</span>
-                        <span className="font-bold font-mono text-amber-500">{s.scrap_weight_kg} kg</span>
-                      </div>
-                      <div className="flex justify-between py-1.5 border-b border-slate-50 dark:border-slate-700/50">
-                        <span className="text-slate-500">Net Consumption:</span>
-                        <span className="font-bold font-mono text-emerald-600 dark:text-emerald-400">{s.net_consumption_kg} kg</span>
-                      </div>
-                      <div className="flex justify-between py-1.5 border-b border-slate-50 dark:border-slate-700/50">
-                        <span className="text-slate-500">Cutbit Used:</span>
-                        <span className="font-bold font-mono text-slate-700 dark:text-slate-300">{s.cutbit_used} sheets</span>
-                      </div>
-                      <div className="flex justify-between py-2 pt-3 border-t border-slate-200 dark:border-slate-700">
-                        <span className="font-bold text-slate-800 dark:text-slate-200">Side Wastage %:</span>
-                        <span className={`text-base font-bold font-mono ${parseFloat(s.wastage_percentage) > 10 ? 'text-rose-500' : 'text-emerald-600'}`}>
-                          {s.wastage_percentage}%
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* TAB 4: RARE MATERIALS HISTORY */}
+          {/* TAB 3: RARE MATERIALS HISTORY */}
           {reportType === 'rare' && rareData && (
             <div className="space-y-4">
               <DataTable
                 columns={[
                   { key: 'material_id', label: 'ID', className: 'w-24 font-mono text-xs' },
                   { key: 'material_name', label: 'Rare Material' },
-                  { key: 'side', label: 'Side' },
                   { key: 'category', label: 'Category' },
                   { key: 'weight_per_sheet', label: 'Weight/Sheet (kg)' },
                   { key: 'total_transactions', label: 'Times Used' },
