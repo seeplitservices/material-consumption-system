@@ -99,6 +99,11 @@ def create_daily_entry(current_user):
     general_remarks = data.get("remarks", "").strip()
     rows = data.get("rows", [])
     allow_negative_override = data.get("allow_negative_override", False)
+    overall_scrap_weight = float(data.get("total_scrap_weight", data.get("scrap_weight", 0) or 0))
+    if overall_scrap_weight == 0:
+        row_scraps = sum(float(r.get("scrap_weight", 0) or 0) for r in rows)
+        if row_scraps > 0:
+            overall_scrap_weight = row_scraps
 
     if not rows or not isinstance(rows, list):
         return jsonify({"success": False, "error": "At least one material row is required."}), 400
@@ -111,10 +116,9 @@ def create_daily_entry(current_user):
         for m in sheets_client.read_rows("Material_Master")
     }
 
-    saved_entries = []
-    stock_updates = []
-    scrap_records = []
-
+    # Step 1: Validate rows and compute overall total input weight
+    validated_rows = []
+    total_input_in_batch = 0.0
     total_punching_in_batch = 0.0
     total_cutbit_in_batch = 0.0
 
@@ -131,45 +135,67 @@ def create_daily_entry(current_user):
         except (ValueError, TypeError):
             unit_weight = 0.0
 
-        # Current stock balance from unified Material_Stock
         cur_balance_info = get_current_stock_balance(mat_id)
-        if cur_balance_info["balance"] is None:
-            if row.get("opening_stock") is not None:
-                op_stock = float(row.get("opening_stock"))
-            else:
-                return jsonify({
-                    "success": False,
-                    "error": f"Material '{mat_name}' has no configured opening stock. Please enter opening stock."
-                }), 400
-        else:
+        if row.get("opening_stock") is not None and str(row.get("opening_stock")).strip() != "":
+            op_stock = float(row.get("opening_stock"))
+        elif cur_balance_info["balance"] is not None:
             op_stock = cur_balance_info["balance"]
+        else:
+            return jsonify({
+                "success": False,
+                "error": f"Material '{mat_name}' has no configured opening stock. Please enter opening stock."
+            }), 400
 
         try:
             used_qty = float(row.get("used_quantity", 0))
-            received_qty = float(row.get("stock_received", 0))
-            scrap_wt = float(row.get("scrap_weight", 0))
             cutbit_val = float(row.get("cutbit_used", 0))
         except ValueError as e:
             return jsonify({"success": False, "error": f"Row {idx} contains non-numeric inputs: {e}"}), 400
 
-        try:
-            calc = calculate_material_entry(
-                opening_stock=op_stock,
-                used_quantity=used_qty,
-                stock_received=received_qty,
-                weight_per_sheet=unit_weight,
-                scrap_weight=scrap_wt,
-                allow_scrap_override=row.get("allow_scrap_override", False)
-            )
-        except ValueError as err:
-            return jsonify({"success": False, "error": f"Row {idx} ({mat_name}): {err}"}), 400
-
-        if calc["closing_stock"] < 0 and not allow_negative_override:
+        # Stock received removed per industrial requirement: Closing = Opening - Used
+        closing_stock = op_stock - used_qty
+        if closing_stock < 0 and not allow_negative_override:
             return jsonify({
                 "success": False,
-                "error": f"Row {idx} ({mat_name}): Closing stock cannot be negative ({calc['closing_stock']}) without authorized stock adjustment.",
+                "error": f"Row {idx} ({mat_name}): Closing stock cannot be negative ({closing_stock}) without authorized stock adjustment.",
                 "requires_override": True
             }), 400
+
+        row_input_wt = used_qty * unit_weight
+        total_input_in_batch += row_input_wt
+        total_punching_in_batch += used_qty
+        total_cutbit_in_batch += cutbit_val
+
+        validated_rows.append({
+            "mat_id": mat_id,
+            "mat_name": mat_name,
+            "unit_weight": unit_weight,
+            "opening_stock": op_stock,
+            "used_quantity": used_qty,
+            "closing_stock": closing_stock,
+            "row_input_wt": row_input_wt,
+            "cutbit_used": cutbit_val,
+            "remarks": row.get("remarks", general_remarks)
+        })
+
+    # Step 2: Compute overall scrap & wastage across all materials
+    if total_input_in_batch > 0:
+        batch_wastage_percentage = (overall_scrap_weight / total_input_in_batch) * 100.0
+        batch_net_consumption = max(0.0, total_input_in_batch - overall_scrap_weight)
+    else:
+        batch_wastage_percentage = 0.0
+        batch_net_consumption = 0.0
+
+    saved_entries = []
+    stock_updates = []
+
+    for item in validated_rows:
+        # Proportionally attribute scrap to row for consistency
+        if total_input_in_batch > 0:
+            row_scrap = (item["row_input_wt"] / total_input_in_batch) * overall_scrap_weight
+        else:
+            row_scrap = 0.0
+        row_net = max(0.0, item["row_input_wt"] - row_scrap)
 
         entry_id = f"ENT-{uuid.uuid4().hex[:8].upper()}"
         entry_row = {
@@ -177,19 +203,19 @@ def create_daily_entry(current_user):
             "entry_date": entry_date,
             "job_number": job_number,
             "shift": shift,
-            "material_id": mat_id,
-            "material_name": mat_name,
-            "opening_stock": calc["opening_stock"],
-            "stock_received": calc["stock_received"],
-            "used_quantity": calc["used_quantity"],
-            "closing_stock": calc["closing_stock"],
-            "weight_per_sheet": calc["weight_per_sheet"],
-            "total_input_weight": calc["total_input_weight"],
-            "scrap_weight": calc["scrap_weight"],
-            "net_consumption": calc["net_consumption"],
-            "wastage_percentage": calc["wastage_percentage"],
-            "cutbit_used": cutbit_val,
-            "remarks": row.get("remarks", general_remarks),
+            "material_id": item["mat_id"],
+            "material_name": item["mat_name"],
+            "opening_stock": item["opening_stock"],
+            "stock_received": 0,
+            "used_quantity": item["used_quantity"],
+            "closing_stock": item["closing_stock"],
+            "weight_per_sheet": item["unit_weight"],
+            "total_input_weight": item["row_input_wt"],
+            "scrap_weight": row_scrap,
+            "net_consumption": row_net,
+            "wastage_percentage": batch_wastage_percentage,
+            "cutbit_used": item["cutbit_used"],
+            "remarks": item["remarks"],
             "employee": employee_name,
             "created_at": now,
             "updated_at": now
@@ -199,34 +225,33 @@ def create_daily_entry(current_user):
         stock_updates.append({
             "stock_id": f"STK-{uuid.uuid4().hex[:6].upper()}",
             "date": entry_date,
-            "material_id": mat_id,
-            "material_name": mat_name,
-            "opening_stock": calc["opening_stock"],
-            "stock_received": calc["stock_received"],
-            "punching_stock": calc["used_quantity"],
-            "closing_stock": calc["closing_stock"],
+            "material_id": item["mat_id"],
+            "material_name": item["mat_name"],
+            "opening_stock": item["opening_stock"],
+            "stock_received": 0,
+            "punching_stock": item["used_quantity"],
+            "closing_stock": item["closing_stock"],
             "remarks": f"Job: {job_number} (Shift: {shift})",
             "updated_by": employee_name,
             "updated_at": now
         })
 
-        if calc["scrap_weight"] > 0 or calc["total_input_weight"] > 0:
-            scrap_records.append({
-                "scrap_id": f"SCRAP-{uuid.uuid4().hex[:6].upper()}",
-                "date": entry_date,
-                "material_id": mat_id,
-                "material_name": mat_name,
-                "total_input_weight": calc["total_input_weight"],
-                "scrap_weight": calc["scrap_weight"],
-                "net_consumption": calc["net_consumption"],
-                "wastage_percentage": calc["wastage_percentage"],
-                "remarks": row.get("remarks", general_remarks),
-                "employee": employee_name,
-                "created_at": now
-            })
-
-        total_punching_in_batch += used_qty
-        total_cutbit_in_batch += cutbit_val
+    # Record overall scrap entry (overall materials, not per-material)
+    scrap_records = []
+    if overall_scrap_weight > 0 or total_input_in_batch > 0:
+        scrap_records.append({
+            "scrap_id": f"SCRAP-{uuid.uuid4().hex[:6].upper()}",
+            "date": entry_date,
+            "material_id": "OVERALL",
+            "material_name": "Overall Materials",
+            "total_input_weight": total_input_in_batch,
+            "scrap_weight": overall_scrap_weight,
+            "net_consumption": batch_net_consumption,
+            "wastage_percentage": batch_wastage_percentage,
+            "remarks": f"Job: {job_number} (Overall scrap: {overall_scrap_weight} kg from {total_input_in_batch:.2f} kg total materials)",
+            "employee": employee_name,
+            "created_at": now
+        })
 
     # Batch append to unified Google Sheets
     sheets_client.append_rows_batch("Daily_Entries", saved_entries)
@@ -241,14 +266,53 @@ def create_daily_entry(current_user):
         action="CREATE_DAILY_ENTRY",
         record_type="Daily_Entries",
         record_id=",".join(e["entry_id"] for e in saved_entries),
-        new_value=f"{len(saved_entries)} materials recorded by {employee_name} on {entry_date}"
+        new_value=f"{len(saved_entries)} materials recorded by {employee_name} on {entry_date}. Overall Scrap: {overall_scrap_weight} kg."
     )
 
     return jsonify({
         "success": True,
         "message": f"Successfully recorded {len(saved_entries)} material entries.",
-        "entries": saved_entries
+        "entries": saved_entries,
+        "batch_summary": {
+            "total_sheets": total_punching_in_batch,
+            "total_input_weight": total_input_in_batch,
+            "total_scrap_weight": overall_scrap_weight,
+            "net_consumption": batch_net_consumption,
+            "wastage_percentage": batch_wastage_percentage
+        }
     }), 201
+
+@entries_bp.route("/<entry_id>", methods=["DELETE"])
+@token_required
+def delete_daily_entry(current_user, entry_id):
+    """
+    Deletes a historical transaction entry.
+    Available to both Data Entry Operators and Directors.
+    """
+    entries = sheets_client.read_rows("Daily_Entries")
+    target = next((e for e in entries if e.get("entry_id") == entry_id), None)
+    if not target:
+        return jsonify({"success": False, "error": "Historical entry not found."}), 404
+
+    target_date = target.get("entry_date")
+    sheets_client.delete_row_by_id("Daily_Entries", "entry_id", entry_id)
+
+    # Re-sync production summary for the date
+    _sync_production_summary(target_date)
+
+    record_audit_log(
+        user_id=current_user["user_id"],
+        action="DELETE_DAILY_ENTRY",
+        record_type="Daily_Entries",
+        record_id=entry_id,
+        old_value=f"material={target.get('material_name')}, used={target.get('used_quantity')}",
+        new_value=f"Deleted by {current_user.get('name', 'Operator')}"
+    )
+
+    return jsonify({
+        "success": True,
+        "message": f"Transaction {entry_id} for {target.get('material_name')} deleted successfully."
+    })
 
 @entries_bp.route("/<entry_id>", methods=["PUT"])
 @token_required
@@ -273,17 +337,16 @@ def update_daily_entry(current_user, entry_id):
         if field in data:
             updated[field] = data[field]
 
-    if any(k in data for k in ["used_quantity", "stock_received", "scrap_weight", "weight_per_sheet"]):
+    if any(k in data for k in ["used_quantity", "scrap_weight", "weight_per_sheet"]):
         op_stock = float(data.get("opening_stock", target.get("opening_stock", 0)))
         used_q = float(data.get("used_quantity", target.get("used_quantity", 0)))
-        rec_q = float(data.get("stock_received", target.get("stock_received", 0)))
         scrap_w = float(data.get("scrap_weight", target.get("scrap_weight", 0)))
         unit_w = float(data.get("weight_per_sheet", target.get("weight_per_sheet", 0)))
 
         calc = calculate_material_entry(
             opening_stock=op_stock,
             used_quantity=used_q,
-            stock_received=rec_q,
+            stock_received=0,
             weight_per_sheet=unit_w,
             scrap_weight=scrap_w,
             allow_scrap_override=True
@@ -291,7 +354,7 @@ def update_daily_entry(current_user, entry_id):
         updated.update({
             "opening_stock": calc["opening_stock"],
             "used_quantity": calc["used_quantity"],
-            "stock_received": calc["stock_received"],
+            "stock_received": 0,
             "closing_stock": calc["closing_stock"],
             "total_input_weight": calc["total_input_weight"],
             "scrap_weight": calc["scrap_weight"],

@@ -36,23 +36,21 @@ export default function ScrapAnalysis() {
 
   const columns = [
     { key: 'date', label: 'Date', className: 'w-28 font-mono text-xs' },
-    { key: 'material_name', label: 'Material Specification', render: val => <span className="font-semibold text-xs">{val}</span> },
-    { key: 'sheets_used', label: 'Sheets Used', render: val => <span className="font-mono text-xs font-semibold">{val}</span> },
-    { key: 'weight_per_sheet', label: 'Wt/Sheet (kg)', render: val => <span className="font-mono text-xs text-slate-500">{val} kg</span> },
-    { key: 'total_input_weight_display', label: 'Input Wt (kg)', render: val => <span className="font-mono text-xs">{val} kg</span> },
-    { key: 'scrap_weight_display', label: 'Scrap Wt (kg)', render: val => <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">{val} kg</span> },
+    { key: 'material_name', label: 'Batch / Material Scope', render: val => <span className="font-semibold text-xs text-slate-900 dark:text-slate-100">{val}</span> },
+    { key: 'total_input_weight_display', label: 'Overall Input Wt (kg)', render: val => <span className="font-mono text-xs">{val} kg</span> },
+    { key: 'scrap_weight_display', label: 'Total Scrap Weighed (kg)', render: val => <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">{val} kg</span> },
     { key: 'net_consumption_display', label: 'Net Consumed (kg)', render: val => <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 text-xs">{val} kg</span> },
     {
       key: 'wastage_percentage_display',
-      label: 'Wastage %',
+      label: 'Overall Wastage %',
       render: val => (
         <span className={`font-mono font-bold text-xs ${parseFloat(val) > 10 ? 'text-rose-500' : 'text-slate-700 dark:text-slate-300'}`}>
           {val}%
         </span>
       )
     },
-    { key: 'remarks', label: 'Remarks', render: val => <span className="text-slate-500 text-[11px]">{val || '--'}</span> },
-    { key: 'employee', label: 'Operator', render: val => <span className="text-slate-500 text-[11px]">{val || '--'}</span> }
+    { key: 'employee', label: 'Operator', render: val => <span className="text-slate-500 text-[11px]">{val || '--'}</span> },
+    { key: 'remarks', label: 'Remarks / Notes', render: val => <span className="text-slate-500 text-[11px]">{val || '--'}</span> }
   ];
 
   return (

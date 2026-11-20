@@ -256,3 +256,91 @@ def test_restore_default_materials(client):
     assert data["success"] is True
     assert len(data["materials"]) == 12
 
+def test_delete_daily_entry_by_operator(client):
+    """
+    Test requirement: Operator / Data Entry User can view and delete historical entries.
+    """
+    op_token = get_operator_token(client)
+    headers = {"Authorization": f"Bearer {op_token}"}
+
+    # Create an entry
+    payload = {
+        "entry_date": "2026-11-20",
+        "shift": "Day",
+        "job_number": "DEL-JOB-001",
+        "total_scrap_weight": 10.0,
+        "rows": [
+            {
+                "material_id": "MAT-01",
+                "opening_stock": 50,
+                "used_quantity": 2,
+                "weight_per_sheet": 29.4375,
+                "cutbit_used": 0
+            }
+        ]
+    }
+    res = client.post("/api/entries", json=payload, headers=headers)
+    assert res.status_code == 201
+    entry_id = res.get_json()["entries"][0]["entry_id"]
+
+    # Verify entry exists
+    res_list = client.get("/api/entries", headers=headers)
+    assert any(e["entry_id"] == entry_id for e in res_list.get_json()["entries"])
+
+    # Operator deletes the entry
+    del_res = client.delete(f"/api/entries/{entry_id}", headers=headers)
+    assert del_res.status_code == 200
+    assert del_res.get_json()["success"] is True
+
+    # Verify entry is removed
+    res_list_after = client.get("/api/entries", headers=headers)
+    assert not any(e["entry_id"] == entry_id for e in res_list_after.get_json()["entries"])
+
+def test_overall_scrap_and_no_received(client):
+    """
+    Test requirement:
+    - No stock received field (Closing = Opening - Used).
+    - Scrap is calculated by the use of overall materials and the total scrap only (no specific material scrap).
+    """
+    op_token = get_operator_token(client)
+    headers = {"Authorization": f"Bearer {op_token}"}
+
+    # Batch with 2 materials:
+    # Mat 1 (MAT-01, wt 29.4375 kg): 2 sheets -> 58.875 kg
+    # Mat 2 (MAT-02, wt 36.7969 kg): 1 sheet  -> 36.7969 kg
+    # Overall Material Input Wt = 58.875 + 36.7969 = 95.6719 kg
+    # Total Scrap Weighed = 9.56719 kg (~10% overall wastage)
+    payload = {
+        "entry_date": "2026-11-20",
+        "shift": "Day",
+        "job_number": "SCRAP-OVERALL-JOB",
+        "total_scrap_weight": 9.56719,
+        "rows": [
+            {
+                "material_id": "MAT-01",
+                "opening_stock": 100,
+                "used_quantity": 2
+            },
+            {
+                "material_id": "MAT-02",
+                "opening_stock": 80,
+                "used_quantity": 1
+            }
+        ]
+    }
+    res = client.post("/api/entries", json=payload, headers=headers)
+    assert res.status_code == 201
+    data = res.get_json()
+
+    entries = data["entries"]
+    assert len(entries) == 2
+
+    # Closing stock has no received: Closing = Opening - Used
+    assert entries[0]["closing_stock"] == 98  # 100 - 2
+    assert entries[1]["closing_stock"] == 79  # 80 - 1
+
+    # Batch summary matches overall materials and total scrap
+    summary = data["batch_summary"]
+    assert round(summary["total_scrap_weight"], 2) == 9.57
+    assert round(summary["wastage_percentage"], 2) == 10.00
+

@@ -22,17 +22,17 @@ const ALL_NAV_ITEMS = [
   { id: 'material-master', label: 'Material Master', icon: Boxes, directorOnly: true },
   { id: 'scrap-analysis', label: 'Scrap & Wastage', icon: Trash2, directorOnly: true },
   { id: 'production-summary', label: 'Production Summary', icon: Activity, directorOnly: true },
-  { id: 'historical-records', label: 'Historical Records', icon: History, directorOnly: true },
+  { id: 'historical-records', label: 'Historical Records', icon: History },
   { id: 'reports', label: 'Reports & Export', icon: FileSpreadsheet, directorOnly: true },
   { id: 'user-management', label: 'User Management', icon: Users, directorOnly: true },
   { id: 'settings', label: 'Settings', icon: Settings, directorOnly: true },
 ];
 
 export default function Sidebar({ currentPage, onNavigate, collapsed, onToggleCollapse, isDirector }) {
-  // If not Director, show ONLY Daily Material Entry
+  // If not Director, show Daily Material Entry and Historical Records
   const visibleNavItems = ALL_NAV_ITEMS.filter(item => {
     if (!isDirector) {
-      return item.id === 'daily-entry';
+      return item.id === 'daily-entry' || item.id === 'historical-records';
     }
     return true;
   });

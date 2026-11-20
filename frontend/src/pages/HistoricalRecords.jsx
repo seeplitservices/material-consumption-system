@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { History, Filter, Edit, Search, CheckCircle2, X } from 'lucide-react';
+import { History, Filter, Edit, Search, CheckCircle2, X, Trash2, AlertTriangle } from 'lucide-react';
 import DataTable from '../components/DataTable';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
 import Toast from '../components/Toast';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 
@@ -18,11 +19,14 @@ export default function HistoricalRecords() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
+  // Delete Confirm Dialog State
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, entry: null });
+  const [deleting, setDeleting] = useState(false);
+
   // Edit Modal State
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [editUsedQty, setEditUsedQty] = useState('');
-  const [editScrapWt, setEditScrapWt] = useState('');
   const [editCutbit, setEditCutbit] = useState('');
   const [editRemarks, setEditRemarks] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
@@ -53,7 +57,6 @@ export default function HistoricalRecords() {
   const openEditModal = (entry) => {
     setSelectedEntry(entry);
     setEditUsedQty(String(entry.used_quantity || 0));
-    setEditScrapWt(String(entry.scrap_weight || 0));
     setEditCutbit(String(entry.cutbit_used || 0));
     setEditRemarks(entry.remarks || '');
     setIsEditOpen(true);
@@ -67,7 +70,6 @@ export default function HistoricalRecords() {
     try {
       const payload = {
         used_quantity: parseFloat(editUsedQty),
-        scrap_weight: parseFloat(editScrapWt),
         cutbit_used: parseFloat(editCutbit),
         remarks: editRemarks.trim()
       };
@@ -82,6 +84,23 @@ export default function HistoricalRecords() {
       setToast({ type: 'error', message: err.message || 'Failed to update transaction.' });
     } finally {
       setEditSubmitting(false);
+    }
+  };
+
+  const handleDeleteEntry = async () => {
+    if (!deleteConfirm.entry) return;
+    setDeleting(true);
+    try {
+      const res = await api.delete(`/api/entries/${deleteConfirm.entry.entry_id}`);
+      if (res.success) {
+        setToast({ type: 'success', message: 'Transaction deleted successfully from Google Sheets.' });
+        fetchEntries();
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: err.message || 'Failed to delete transaction.' });
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm({ isOpen: false, entry: null });
     }
   };
 
@@ -102,25 +121,32 @@ export default function HistoricalRecords() {
     { key: 'opening_stock_display', label: 'Opening', render: val => <span className="font-mono text-xs text-slate-500">{val}</span> },
     { key: 'used_quantity_display', label: 'Used Sheets', render: val => <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-xs">{val}</span> },
     { key: 'closing_stock_display', label: 'Closing', render: val => <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">{val}</span> },
-    { key: 'total_input_weight_display', label: 'Input Wt (kg)', render: val => <span className="font-mono text-xs">{val} kg</span> },
-    { key: 'scrap_weight_display', label: 'Scrap Wt (kg)', render: val => <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">{val} kg</span> },
-    { key: 'wastage_percentage_display', label: 'Wastage %', render: val => <span className="font-mono font-bold text-rose-500 text-xs">{val}%</span> },
+    { key: 'total_input_weight_display', label: 'Input Wt (kg)', render: val => <span className="font-mono font-semibold text-xs">{val} kg</span> },
     { key: 'cutbit_used_display', label: 'Cutbit', render: val => <span className="font-mono text-xs">{val}</span> },
     { key: 'employee', label: 'Operator', render: val => <span className="text-slate-500 text-[11px]">{val}</span> },
     {
       key: 'actions',
-      label: 'Edit',
+      label: 'Actions',
       sortable: false,
       render: (_, row) => (
-        isDirector ? (
+        <div className="flex items-center gap-1.5">
+          {isDirector && (
+            <button
+              onClick={() => openEditModal(row)}
+              className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
+              title="Edit transaction record"
+            >
+              <Edit className="w-3.5 h-3.5 text-sky-500" />
+            </button>
+          )}
           <button
-            onClick={() => openEditModal(row)}
-            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
-            title="Edit historical transaction"
+            onClick={() => setDeleteConfirm({ isOpen: true, entry: row })}
+            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"
+            title="Delete historical entry"
           >
-            <Edit className="w-3.5 h-3.5 text-sky-500" />
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
-        ) : null
+        </div>
       )
     }
   ];
@@ -136,7 +162,7 @@ export default function HistoricalRecords() {
             Historical Material Usage Archive
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Complete transaction ledger stored in Sheet: Daily_Entries. All modifications trigger reconciliation and audit logging.
+            Complete transaction ledger stored in Sheet: Daily_Entries. Operators and Directors can view and manage records.
           </p>
         </div>
 
@@ -185,6 +211,17 @@ export default function HistoricalRecords() {
         />
       )}
 
+      {/* Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title="Delete Historical Transaction"
+        message={`Are you sure you want to delete this historical transaction (${deleteConfirm.entry?.entry_id}) for "${deleteConfirm.entry?.material_name}"? This action will remove the record from Daily_Entries in Google Sheets.`}
+        onConfirm={handleDeleteEntry}
+        onCancel={() => setDeleteConfirm({ isOpen: false, entry: null })}
+        confirmText={deleting ? "Deleting..." : "Yes, Delete Entry"}
+        confirmVariant="danger"
+      />
+
       {/* Edit Entry Modal */}
       {isEditOpen && selectedEntry && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs">
@@ -212,36 +249,19 @@ export default function HistoricalRecords() {
                 <span className="font-bold text-slate-900 dark:text-slate-100">{selectedEntry.material_name}</span>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Used / Punching Quantity
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={editUsedQty}
-                    onChange={e => setEditUsedQty(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                    Scrap Weight (kg)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={editScrapWt}
-                    onChange={e => setEditScrapWt(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
-                  />
-                </div>
+              <div>
+                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                  Used / Punching Quantity (Sheets)
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editUsedQty}
+                  onChange={e => setEditUsedQty(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
+                />
               </div>
 
               <div>

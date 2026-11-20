@@ -23,10 +23,10 @@ function AppContent() {
   const [isCalcOpen, setIsCalcOpen] = useState(false);
   const [isRareModalOpen, setIsRareModalOpen] = useState(false);
 
-  // Strict role lock: Data Entry Users (Operators) can ONLY ever access daily-entry
+  // Role access check: Operators can access daily-entry and historical-records
   useEffect(() => {
     if (!loading && user) {
-      if (!isDirector && currentPage !== 'daily-entry') {
+      if (!isDirector && currentPage !== 'daily-entry' && currentPage !== 'historical-records') {
         setCurrentPage('daily-entry');
       }
     }
@@ -66,7 +66,7 @@ function AppContent() {
       <Sidebar
         currentPage={currentPage}
         onNavigate={(page) => {
-          if (!isDirector && page !== 'daily-entry') return;
+          if (!isDirector && page !== 'daily-entry' && page !== 'historical-records') return;
           setCurrentPage(page);
         }}
         collapsed={sidebarCollapsed}
@@ -82,9 +82,12 @@ function AppContent() {
         />
 
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
-          {/* Operator only ever renders DailyEntry */}
+          {/* Operator views DailyEntry or HistoricalRecords */}
           {!isDirector ? (
-            <DailyEntry onSaved={() => {}} />
+            <>
+              {currentPage === 'daily-entry' && <DailyEntry onSaved={() => {}} />}
+              {currentPage === 'historical-records' && <HistoricalRecords />}
+            </>
           ) : (
             <>
               {currentPage === 'dashboard' && (

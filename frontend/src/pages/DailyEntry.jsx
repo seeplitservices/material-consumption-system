@@ -9,7 +9,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   X,
-  Calculator
+  Calculator,
+  Scale
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -25,8 +26,9 @@ export default function DailyEntry({ onSaved }) {
   const [jobNumber, setJobNumber] = useState('');
   const [employeeName, setEmployeeName] = useState(user?.name || '');
   const [generalRemarks, setGeneralRemarks] = useState('');
+  const [totalScrapWeight, setTotalScrapWeight] = useState('');
 
-  // Available Materials Cache & Unified Stock Balances (initialized with fallback standard materials)
+  // Available Materials Cache & Unified Stock Balances
   const [materials, setMaterials] = useState(STANDARD_MATERIALS_FALLBACK);
   const [stockBalances, setStockBalances] = useState({});
   const [loadingMats, setLoadingMats] = useState(false);
@@ -58,17 +60,12 @@ export default function DailyEntry({ onSaved }) {
       material_id: '',
       material_name: '',
       opening_stock: 0,
-      stock_received: 0,
       used_quantity: 0,
       weight_per_sheet: 0,
       total_input_weight: 0,
-      scrap_weight: 0,
       closing_stock: 0,
-      net_consumption: 0,
-      wastage_percentage: 0,
       cutbit_used: 0,
       remarks: '',
-      allow_scrap_override: false,
       is_configured: true
     };
   }
@@ -85,7 +82,6 @@ export default function DailyEntry({ onSaved }) {
       if (matRes.success && matRes.materials && matRes.materials.length > 0) {
         setMaterials(matRes.materials);
       } else {
-        // Auto-restore default materials if empty
         try {
           const restoreRes = await api.post('/api/materials/restore-defaults');
           if (restoreRes.success && restoreRes.materials && restoreRes.materials.length > 0) {
@@ -110,37 +106,6 @@ export default function DailyEntry({ onSaved }) {
       setStockBalances(balanceMap);
     } catch (err) {
       setToast({ type: 'error', message: `Failed to load stock data: ${err.message}` });
-      setMaterials(prev => (prev && prev.length > 0 ? prev : STANDARD_MATERIALS_FALLBACK));
-    } finally {
-      setLoadingMats(false);
-    }
-  };
-
-  // Restore standard materials manually on demand
-  const handleRestoreMaterials = async () => {
-    setLoadingMats(true);
-    try {
-      const res = await api.post('/api/materials/restore-defaults');
-      if (res.success) {
-        setMaterials(res.materials || STANDARD_MATERIALS_FALLBACK);
-        setToast({
-          type: 'success',
-          message: res.message || 'All standard factory materials restored successfully!'
-        });
-        const stockRes = await api.get('/api/stock');
-        if (stockRes.success && stockRes.stock) {
-          const balanceMap = {};
-          stockRes.stock.forEach(item => {
-            balanceMap[item.material_id] = {
-              closing_stock: item.closing_stock,
-              is_configured: item.is_configured
-            };
-          });
-          setStockBalances(balanceMap);
-        }
-      }
-    } catch (err) {
-      setToast({ type: 'error', message: err.message || 'Failed to restore standard materials.' });
     } finally {
       setLoadingMats(false);
     }
@@ -149,6 +114,26 @@ export default function DailyEntry({ onSaved }) {
   useEffect(() => {
     loadMaterialsAndStock();
   }, []);
+
+  // Restore factory standard materials manually
+  const handleRestoreMaterials = async () => {
+    setLoadingMats(true);
+    try {
+      const res = await api.post('/api/materials/restore-defaults');
+      if (res.success) {
+        setMaterials(res.materials || STANDARD_MATERIALS_FALLBACK);
+        setToast({
+          type: 'success',
+          message: `Restored ${res.restored_count || 12} standard materials in Google Sheets!`
+        });
+        loadMaterialsAndStock();
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: err.message || 'Failed to restore default materials.' });
+    } finally {
+      setLoadingMats(false);
+    }
+  };
 
   // Open Rare Material Modal
   const openRareModal = (rowId = null) => {
@@ -207,7 +192,6 @@ export default function DailyEntry({ onSaved }) {
           message: `Rare material "${res.material.material_name}" registered and saved in Google Sheets!`
         });
 
-        // Refresh materials list and stock balances
         const [matRes, stockRes] = await Promise.all([
           api.get('/api/materials'),
           api.get('/api/stock')
@@ -231,18 +215,13 @@ export default function DailyEntry({ onSaved }) {
         const newOpeningStock = parseFloat(rareOpeningStock) || 0;
         const unitWt = res.material.weight_per_sheet || 0;
 
-        // Auto-assign newly created rare material to target row
         if (targetRowId) {
           setRows(prevRows =>
             prevRows.map(row => {
               if (row.id !== targetRowId) return row;
               const used = row.used_quantity || 0;
-              const rec = row.stock_received || 0;
-              const scrap = row.scrap_weight || 0;
-              const closing = newOpeningStock + rec - used;
+              const closing = newOpeningStock - used;
               const totalInput = used * unitWt;
-              const net = Math.max(0, totalInput - scrap);
-              const wastage = totalInput > 0 ? (scrap / totalInput) * 100 : 0;
               return {
                 ...row,
                 material_id: newMatId,
@@ -251,14 +230,11 @@ export default function DailyEntry({ onSaved }) {
                 opening_stock: newOpeningStock,
                 closing_stock: closing,
                 total_input_weight: totalInput,
-                net_consumption: net,
-                wastage_percentage: wastage,
                 is_configured: true
               };
             })
           );
         } else {
-          // If no target row, assign to first empty row or create new row
           setRows(prevRows => {
             const emptyIdx = prevRows.findIndex(r => !r.material_id);
             if (emptyIdx !== -1) {
@@ -316,13 +292,8 @@ export default function DailyEntry({ onSaved }) {
         if (row.id !== rowId) return row;
 
         const used = row.used_quantity || 0;
-        const rec = row.stock_received || 0;
-        const scrap = row.scrap_weight || 0;
-
-        const closing = openingStock + rec - used;
+        const closing = openingStock - used;
         const totalInput = used * unitWeight;
-        const net = Math.max(0, totalInput - scrap);
-        const wastage = totalInput > 0 ? (scrap / totalInput) * 100 : 0;
 
         return {
           ...row,
@@ -332,8 +303,6 @@ export default function DailyEntry({ onSaved }) {
           opening_stock: openingStock,
           closing_stock: closing,
           total_input_weight: totalInput,
-          net_consumption: net,
-          wastage_percentage: wastage,
           is_configured: balanceInfo.is_configured
         };
       })
@@ -348,16 +317,12 @@ export default function DailyEntry({ onSaved }) {
 
         const updated = { ...row, [field]: value };
         const op = parseFloat(updated.opening_stock) || 0;
-        const rec = parseFloat(updated.stock_received) || 0;
         const used = parseFloat(updated.used_quantity) || 0;
         const unitWt = parseFloat(updated.weight_per_sheet) || 0;
-        const scrap = parseFloat(updated.scrap_weight) || 0;
 
-        updated.closing_stock = op + rec - used;
+        // Closing Stock = Opening Stock - Used Sheets (no received)
+        updated.closing_stock = op - used;
         updated.total_input_weight = used * unitWt;
-        updated.net_consumption = Math.max(0, updated.total_input_weight - scrap);
-        updated.wastage_percentage =
-          updated.total_input_weight > 0 ? (scrap / updated.total_input_weight) * 100 : 0;
 
         return updated;
       })
@@ -376,13 +341,14 @@ export default function DailyEntry({ onSaved }) {
     setRows(prev => prev.filter(r => r.id !== id));
   };
 
-  // Real-time Batch Totals Calculation
+  // Real-time Batch Totals Calculation (Scrap calculated across overall materials)
   const totalSheetsPunched = rows.reduce((acc, r) => acc + (parseFloat(r.used_quantity) || 0), 0);
   const totalMaterialWeight = rows.reduce((acc, r) => acc + (parseFloat(r.total_input_weight) || 0), 0);
-  const totalScrapWeight = rows.reduce((acc, r) => acc + (parseFloat(r.scrap_weight) || 0), 0);
+  const scrapWeightNum = parseFloat(totalScrapWeight) || 0;
+  const netConsumedWeight = Math.max(0, totalMaterialWeight - scrapWeightNum);
   const totalCutbitUsed = rows.reduce((acc, r) => acc + (parseFloat(r.cutbit_used) || 0), 0);
   const batchWastagePct =
-    totalMaterialWeight > 0 ? (totalScrapWeight / totalMaterialWeight) * 100 : 0;
+    totalMaterialWeight > 0 ? (scrapWeightNum / totalMaterialWeight) * 100 : 0;
 
   // Submit Daily Transaction Batch
   const handleSubmit = async (e) => {
@@ -409,18 +375,16 @@ export default function DailyEntry({ onSaved }) {
         entry_date: entryDate,
         shift,
         job_number: jobNumber,
+        total_scrap_weight: scrapWeightNum,
         remarks: generalRemarks,
         rows: rows.map(r => ({
           material_id: r.material_id,
           material_name: r.material_name,
           opening_stock: r.opening_stock,
-          stock_received: r.stock_received,
           used_quantity: r.used_quantity,
           weight_per_sheet: r.weight_per_sheet,
-          scrap_weight: r.scrap_weight,
           cutbit_used: r.cutbit_used,
-          remarks: r.remarks,
-          allow_scrap_override: r.allow_scrap_override
+          remarks: r.remarks
         }))
       };
 
@@ -433,6 +397,7 @@ export default function DailyEntry({ onSaved }) {
         setRows([createEmptyRow()]);
         setJobNumber('');
         setGeneralRemarks('');
+        setTotalScrapWeight('');
         loadMaterialsAndStock();
         if (onSaved) onSaved();
       }
@@ -460,7 +425,7 @@ export default function DailyEntry({ onSaved }) {
                   Daily Material Consumption & Punching Entry
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Record daily factory sheet punching, off-cut cutbit, and scrap weight into Google Sheets.
+                  Record daily factory sheet punching, off-cut cutbit, and overall batch scrap weight into Google Sheets.
                 </p>
               </div>
             </div>
@@ -476,7 +441,7 @@ export default function DailyEntry({ onSaved }) {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 text-xs">
             <div>
               <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
                 Entry Date *
@@ -519,7 +484,7 @@ export default function DailyEntry({ onSaved }) {
 
             <div>
               <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Operator / Employee Name *
+                Operator Name *
               </label>
               <input
                 type="text"
@@ -528,6 +493,26 @@ export default function DailyEntry({ onSaved }) {
                 required
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
               />
+            </div>
+
+            {/* Overall Scrap Weight Field for the Entire Batch / Shift */}
+            <div>
+              <label className="block font-medium text-amber-700 dark:text-amber-300 mb-1 flex items-center gap-1">
+                <Scale className="w-3.5 h-3.5" />
+                <span>Overall Scrap Wt (kg)</span>
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="0"
+                placeholder="Total batch scrap..."
+                value={totalScrapWeight}
+                onChange={e => setTotalScrapWeight(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-600 bg-amber-50/40 dark:bg-amber-950/20 font-bold font-mono text-amber-800 dark:text-amber-200 placeholder:text-amber-400"
+              />
+              <span className="text-[10px] text-slate-400 mt-0.5 block">
+                Total scrap weighed across all punched materials
+              </span>
             </div>
 
             <div>
@@ -579,15 +564,13 @@ export default function DailyEntry({ onSaved }) {
                 <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-700 text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
                   <th className="py-3 px-2 w-8 text-center">#</th>
                   <th className="py-3 px-3 min-w-[260px]">Material Specification</th>
-                  <th className="py-3 px-2 w-24">Opening</th>
-                  <th className="py-3 px-2 w-24">Received</th>
+                  <th className="py-3 px-2 w-28">Opening Stock</th>
                   <th className="py-3 px-2 w-28">Used Sheets</th>
                   <th className="py-3 px-2 w-24">Weight/Sh</th>
                   <th className="py-3 px-2 w-28">Total Wt (kg)</th>
-                  <th className="py-3 px-2 w-28">Scrap Wt (kg)</th>
-                  <th className="py-3 px-2 w-24">Closing</th>
+                  <th className="py-3 px-2 w-28">Closing Stock</th>
                   <th className="py-3 px-2 w-24">Cutbit</th>
-                  <th className="py-3 px-2 min-w-[120px]">Remarks</th>
+                  <th className="py-3 px-2 min-w-[140px]">Remarks</th>
                   <th className="py-3 px-2 w-10 text-center">Action</th>
                 </tr>
               </thead>
@@ -634,18 +617,6 @@ export default function DailyEntry({ onSaved }) {
                       />
                     </td>
 
-                    {/* Received */}
-                    <td className="py-3 px-2">
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={row.stock_received}
-                        onChange={e => handleRowFieldChange(row.id, 'stock_received', e.target.value)}
-                        className="w-full px-2 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
-                      />
-                    </td>
-
                     {/* Used Quantity (Sheets) */}
                     <td className="py-3 px-2">
                       <input
@@ -669,19 +640,7 @@ export default function DailyEntry({ onSaved }) {
                       {row.total_input_weight ? `${row.total_input_weight.toFixed(2)}` : '0.00'}
                     </td>
 
-                    {/* Scrap Weight (kg) */}
-                    <td className="py-3 px-2">
-                      <input
-                        type="number"
-                        step="any"
-                        min="0"
-                        value={row.scrap_weight}
-                        onChange={e => handleRowFieldChange(row.id, 'scrap_weight', e.target.value)}
-                        className="w-full px-2 py-1.5 rounded-lg border border-amber-300 dark:border-amber-600 bg-amber-50/30 dark:bg-amber-950/20 font-mono text-amber-700 dark:text-amber-300"
-                      />
-                    </td>
-
-                    {/* Closing Stock */}
+                    {/* Closing Stock (Formula: Opening Stock - Used Quantity) */}
                     <td className={`py-3 px-2 font-bold ${row.closing_stock < 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
                       {row.closing_stock !== undefined ? row.closing_stock.toFixed(1) : '--'}
                     </td>
@@ -726,26 +685,26 @@ export default function DailyEntry({ onSaved }) {
             </table>
           </div>
 
-          {/* Real-Time Live Batch Summary Footer */}
+          {/* Real-Time Live Batch Summary Footer (Scrap calculated over overall materials) */}
           <div className="mt-6 p-4 rounded-xl bg-slate-900 text-slate-200 border border-slate-800 grid grid-cols-2 md:grid-cols-5 gap-4 text-xs">
             <div>
               <span className="text-slate-400 block text-[10px] uppercase tracking-wider">Total Sheets Punched</span>
               <span className="text-base font-bold text-sky-400 font-mono">{totalSheetsPunched.toFixed(1)} sheets</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase tracking-wider">Total Input Weight</span>
+              <span className="text-slate-400 block text-[10px] uppercase tracking-wider">Overall Material Input</span>
               <span className="text-base font-bold text-slate-100 font-mono">{totalMaterialWeight.toFixed(2)} kg</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase tracking-wider">Total Scrap Weight</span>
-              <span className="text-base font-bold text-amber-400 font-mono">{totalScrapWeight.toFixed(2)} kg</span>
+              <span className="text-slate-400 block text-[10px] uppercase tracking-wider">Total Scrap Weighed</span>
+              <span className="text-base font-bold text-amber-400 font-mono">{scrapWeightNum.toFixed(2)} kg</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase tracking-wider">Total Cutbit</span>
-              <span className="text-base font-bold text-slate-300 font-mono">{totalCutbitUsed.toFixed(1)} sheets</span>
+              <span className="text-slate-400 block text-[10px] uppercase tracking-wider">Net Consumed Weight</span>
+              <span className="text-base font-bold text-emerald-400 font-mono">{netConsumedWeight.toFixed(2)} kg</span>
             </div>
             <div>
-              <span className="text-slate-400 block text-[10px] uppercase tracking-wider">Batch Wastage %</span>
+              <span className="text-slate-400 block text-[10px] uppercase tracking-wider">Overall Wastage %</span>
               <span className={`text-base font-bold font-mono ${batchWastagePct > 10 ? 'text-rose-400' : 'text-emerald-400'}`}>
                 {batchWastagePct.toFixed(2)}%
               </span>
@@ -756,7 +715,10 @@ export default function DailyEntry({ onSaved }) {
           <div className="mt-6 flex items-center justify-end gap-3">
             <button
               type="button"
-              onClick={() => setRows([createEmptyRow()])}
+              onClick={() => {
+                setRows([createEmptyRow()]);
+                setTotalScrapWeight('');
+              }}
               className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -781,7 +743,7 @@ export default function DailyEntry({ onSaved }) {
         </div>
       </form>
 
-      {/* Embedded Rare Material Creation Modal (Accessible directly by Operators & Directors) */}
+      {/* Embedded Rare Material Creation Modal */}
       {isRareModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs">
           <div className="w-full max-w-xl bg-white dark:bg-slate-900 rounded-2xl border border-purple-200 dark:border-purple-900/60 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
