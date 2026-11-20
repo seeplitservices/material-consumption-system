@@ -84,23 +84,14 @@ function AppContent() {
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
           {/* Operator only ever renders DailyEntry */}
           {!isDirector ? (
-            <DailyEntry
-              onSaved={() => {}}
-              onOpenRareModal={() => {}}
-            />
+            <DailyEntry onSaved={() => {}} />
           ) : (
             <>
               {currentPage === 'dashboard' && (
                 <Dashboard onNavigateToEntry={() => setCurrentPage('daily-entry')} />
               )}
               {currentPage === 'daily-entry' && (
-                <DailyEntry
-                  onSaved={() => {}}
-                  onOpenRareModal={() => {
-                    setCurrentPage('material-master');
-                    setIsRareModalOpen(true);
-                  }}
-                />
+                <DailyEntry onSaved={() => {}} />
               )}
               {currentPage === 'material-stock' && <MaterialStock />}
               {currentPage === 'material-master' && (
