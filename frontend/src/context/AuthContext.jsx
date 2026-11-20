@@ -1,0 +1,81 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import { api } from '../services/api';
+
+const AuthContext = createContext(null);
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(() => {
+    try {
+      const stored = localStorage.getItem('mcwms_user');
+      return stored ? JSON.parse(stored) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [token, setToken] = useState(() => localStorage.getItem('mcwms_token'));
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function verifyAuth() {
+      if (!token) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await api.get('/api/auth/me');
+        if (res.success && res.user) {
+          setUser(res.user);
+          localStorage.setItem('mcwms_user', JSON.stringify(res.user));
+        }
+      } catch (err) {
+        console.warn('Auth verification failed:', err.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    const handleAuthExpired = () => {
+      setUser(null);
+      setToken(null);
+    };
+
+    window.addEventListener('auth_expired', handleAuthExpired);
+    verifyAuth();
+
+    return () => window.removeEventListener('auth_expired', handleAuthExpired);
+  }, [token]);
+
+  const login = async (email, password) => {
+    const res = await api.post('/api/auth/login', { email, password });
+    if (res.success) {
+      setUser(res.user);
+      setToken(res.token);
+      localStorage.setItem('mcwms_token', res.token);
+      localStorage.setItem('mcwms_user', JSON.stringify(res.user));
+    }
+    return res;
+  };
+
+  const logout = async () => {
+    try {
+      await api.post('/api/auth/logout');
+    } catch (e) {
+      // ignore
+    } finally {
+      setUser(null);
+      setToken(null);
+      localStorage.removeItem('mcwms_token');
+      localStorage.removeItem('mcwms_user');
+    }
+  };
+
+  const isAdmin = user?.role === 'Admin';
+
+  return (
+    <AuthContext.Provider value={{ user, token, isAdmin, login, logout, loading }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export const useAuth = () => useContext(AuthContext);

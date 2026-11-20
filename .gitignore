@@ -1,0 +1,35 @@
+# Node dependencies & build outputs
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+backend/app/**/__pycache__/
+backend/tests/__pycache__/
+.pytest_cache/
+backend/.pytest_cache/
+env/
+venv/
+ENV/
+
+# Secrets & Environment variables
+.env
+*.env
+backend/.env
+frontend/.env
+service_account.json
+backend/service_account.json
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
