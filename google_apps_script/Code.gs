@@ -795,7 +795,12 @@ function createDailyEntry(body) {
     const entryId = "ENT-" + Math.random().toString(36).substring(2, 8).toUpperCase();
     const used = parseFloat(r.used_quantity) || 0;
     const op = parseFloat(r.opening_stock) || 0;
-    const cl = op - used;
+    const autoCl = op - used;
+    const cl = (r.closing_stock !== undefined && r.closing_stock !== null && r.closing_stock !== "")
+      ? parseFloat(r.closing_stock)
+      : autoCl;
+    const diff = cl - autoCl;
+    const received = diff > 0 ? diff : (parseFloat(r.stock_received) || 0);
     const unitWt = parseFloat(r.weight_per_sheet) || 0;
     const inputWt = used * unitWt;
     const rowScrap = totalBatchInput > 0 ? (inputWt / totalBatchInput) * totalScrap : 0;
@@ -808,7 +813,7 @@ function createDailyEntry(body) {
       material_id: r.material_id,
       material_name: r.material_name,
       opening_stock: op,
-      stock_received: 0,
+      stock_received: received,
       used_quantity: used,
       closing_stock: cl,
       weight_per_sheet: unitWt,
@@ -833,10 +838,10 @@ function createDailyEntry(body) {
       material_id: r.material_id,
       material_name: r.material_name,
       opening_stock: op,
-      stock_received: 0,
+      stock_received: received,
       punching_stock: used,
       closing_stock: cl,
-      remarks: `Job: ${jobNo} (${shift})`,
+      remarks: diff > 0 ? `Job: ${jobNo} (${shift}) [New stock: +${received}]` : `Job: ${jobNo} (${shift})`,
       updated_by: employeeName,
       updated_at: now
     });

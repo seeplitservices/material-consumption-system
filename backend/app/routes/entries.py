@@ -155,8 +155,19 @@ def create_daily_entry(current_user):
         except ValueError as e:
             return jsonify({"success": False, "error": f"Row {idx} contains non-numeric inputs: {e}"}), 400
 
-        # Stock received removed per industrial requirement: Closing = Opening - Used
-        closing_stock = op_stock - used_qty
+        # Closing stock is auto-calculated (Opening - Used), but allows manual override for new stock received
+        auto_closing = op_stock - used_qty
+        if row.get("closing_stock") is not None and str(row.get("closing_stock")).strip() != "":
+            try:
+                closing_stock = float(row.get("closing_stock"))
+            except ValueError:
+                closing_stock = auto_closing
+        else:
+            closing_stock = auto_closing
+
+        diff = closing_stock - auto_closing
+        stock_received = max(0.0, diff) if diff > 0 else float(row.get("stock_received", 0) or 0)
+
         if closing_stock < 0 and not allow_negative_override:
             return jsonify({
                 "success": False,
@@ -174,6 +185,7 @@ def create_daily_entry(current_user):
             "mat_name": mat_name,
             "unit_weight": unit_weight,
             "opening_stock": op_stock,
+            "stock_received": stock_received,
             "used_quantity": used_qty,
             "closing_stock": closing_stock,
             "row_input_wt": row_input_wt,
@@ -209,7 +221,7 @@ def create_daily_entry(current_user):
             "material_id": item["mat_id"],
             "material_name": item["mat_name"],
             "opening_stock": item["opening_stock"],
-            "stock_received": 0,
+            "stock_received": item["stock_received"],
             "used_quantity": item["used_quantity"],
             "closing_stock": item["closing_stock"],
             "weight_per_sheet": item["unit_weight"],
@@ -231,10 +243,10 @@ def create_daily_entry(current_user):
             "material_id": item["mat_id"],
             "material_name": item["mat_name"],
             "opening_stock": item["opening_stock"],
-            "stock_received": 0,
+            "stock_received": item["stock_received"],
             "punching_stock": item["used_quantity"],
             "closing_stock": item["closing_stock"],
-            "remarks": f"Job: {job_number} (Shift: {shift})",
+            "remarks": f"Job: {job_number} (Shift: {shift})" + (f" [New stock: +{item['stock_received']}]" if item["stock_received"] > 0 else ""),
             "updated_by": employee_name,
             "updated_at": now
         })

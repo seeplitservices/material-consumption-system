@@ -67,6 +67,7 @@ export default function DailyEntry({ onSaved }) {
       weight_per_sheet: 0,
       total_input_weight: 0,
       closing_stock: 0,
+      is_custom_closing: false,
       cutbit_used: 0,
       remarks: '',
       is_configured: true
@@ -305,6 +306,7 @@ export default function DailyEntry({ onSaved }) {
           weight_per_sheet: unitWeight,
           opening_stock: openingStock,
           closing_stock: closing,
+          is_custom_closing: false,
           total_input_weight: totalInput,
           is_configured: balanceInfo.is_configured
         };
@@ -323,8 +325,19 @@ export default function DailyEntry({ onSaved }) {
         const used = parseFloat(updated.used_quantity) || 0;
         const unitWt = parseFloat(updated.weight_per_sheet) || 0;
 
-        // Closing Stock = Opening Stock - Used Sheets (no received)
-        updated.closing_stock = op - used;
+        // Closing Stock is auto-calculated by default (Opening - Used),
+        // but user can manually edit it if new stock arrived on that day.
+        if (field === 'closing_stock') {
+          const clVal = value === '' ? '' : parseFloat(value);
+          updated.closing_stock = clVal;
+          const autoCl = op - used;
+          updated.is_custom_closing = (value !== '' && !isNaN(clVal) && clVal !== autoCl);
+        } else if (field === 'opening_stock' || field === 'used_quantity') {
+          if (!updated.is_custom_closing) {
+            updated.closing_stock = op - used;
+          }
+        }
+
         updated.total_input_weight = used * unitWt;
 
         return updated;
@@ -386,15 +399,27 @@ export default function DailyEntry({ onSaved }) {
         employee_name: employeeName.trim(),
         total_scrap_weight: scrapWeightNum,
         remarks: generalRemarks,
-        rows: rows.map(r => ({
-          material_id: r.material_id,
-          material_name: r.material_name,
-          opening_stock: r.opening_stock,
-          used_quantity: r.used_quantity,
-          weight_per_sheet: r.weight_per_sheet,
-          cutbit_used: r.cutbit_used,
-          remarks: r.remarks
-        }))
+        rows: rows.map(r => {
+          const op = parseFloat(r.opening_stock) || 0;
+          const used = parseFloat(r.used_quantity) || 0;
+          const cl = (r.closing_stock !== undefined && r.closing_stock !== null && r.closing_stock !== '')
+            ? parseFloat(r.closing_stock)
+            : (op - used);
+          const diff = cl - (op - used);
+          const received = diff > 0 ? diff : 0;
+
+          return {
+            material_id: r.material_id,
+            material_name: r.material_name,
+            opening_stock: op,
+            stock_received: received,
+            used_quantity: used,
+            closing_stock: cl,
+            weight_per_sheet: r.weight_per_sheet,
+            cutbit_used: r.cutbit_used,
+            remarks: r.remarks
+          };
+        })
       };
 
       const res = await api.post('/api/entries', payload);
@@ -581,7 +606,12 @@ export default function DailyEntry({ onSaved }) {
                   <th className="py-3 px-2 w-28">Used Sheets</th>
                   <th className="py-3 px-2 w-24">Weight/Sh</th>
                   <th className="py-3 px-2 w-28">Total Wt (kg)</th>
-                  <th className="py-3 px-2 w-28">Closing Stock</th>
+                  <th className="py-3 px-2 w-32">
+                    <div className="flex items-center gap-1">
+                      <span>Closing Stock</span>
+                      <span className="text-[9px] font-normal lowercase tracking-normal text-slate-400 dark:text-slate-500">(auto/edit)</span>
+                    </div>
+                  </th>
                   <th className="py-3 px-2 w-24">Cutbit</th>
                   <th className="py-3 px-2 min-w-[140px]">Remarks</th>
                   <th className="py-3 px-2 w-10 text-center">Action</th>
@@ -653,9 +683,46 @@ export default function DailyEntry({ onSaved }) {
                       {row.total_input_weight ? `${row.total_input_weight.toFixed(2)}` : '0.00'}
                     </td>
 
-                    {/* Closing Stock (Formula: Opening Stock - Used Quantity) */}
-                    <td className={`py-3 px-2 font-bold ${row.closing_stock < 0 ? 'text-rose-500' : 'text-emerald-600 dark:text-emerald-400'}`}>
-                      {row.closing_stock !== undefined ? row.closing_stock.toFixed(1) : '--'}
+                    {/* Closing Stock (Auto-calculated: Opening Stock - Used Quantity, editable if new stock arrived) */}
+                    <td className="py-3 px-2">
+                      <div className="relative">
+                        <input
+                          type="number"
+                          step="any"
+                          value={row.closing_stock !== undefined && row.closing_stock !== null ? row.closing_stock : ''}
+                          onChange={e => handleRowFieldChange(row.id, 'closing_stock', e.target.value)}
+                          title="Auto-calculated (Opening - Used). You can edit directly if new stock arrived."
+                          placeholder="0"
+                          className={`w-full px-2 py-1.5 rounded-lg border font-mono font-bold text-xs ${
+                            Number(row.closing_stock) < 0
+                              ? 'border-rose-400 bg-rose-50/50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400'
+                              : row.is_custom_closing
+                              ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-300'
+                              : 'border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100'
+                          }`}
+                        />
+                        {row.is_custom_closing && (
+                          <div className="flex items-center justify-between text-[9px] mt-0.5 font-sans leading-tight">
+                            <span className="text-emerald-600 dark:text-emerald-400 font-semibold truncate max-w-[70px]">
+                              {Number(row.closing_stock) > ((parseFloat(row.opening_stock) || 0) - (parseFloat(row.used_quantity) || 0))
+                                ? `+${(Number(row.closing_stock) - ((parseFloat(row.opening_stock) || 0) - (parseFloat(row.used_quantity) || 0))).toFixed(1)} new`
+                                : `${(Number(row.closing_stock) - ((parseFloat(row.opening_stock) || 0) - (parseFloat(row.used_quantity) || 0))).toFixed(1)} adj`}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const op = parseFloat(row.opening_stock) || 0;
+                                const used = parseFloat(row.used_quantity) || 0;
+                                setRows(prev => prev.map(r => r.id === row.id ? { ...r, closing_stock: op - used, is_custom_closing: false } : r));
+                              }}
+                              className="text-sky-600 dark:text-sky-400 hover:underline shrink-0"
+                              title="Reset back to auto-calculation (Opening - Used)"
+                            >
+                              Auto
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
 
                     {/* Cutbit */}
