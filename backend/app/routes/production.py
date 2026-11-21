@@ -18,6 +18,30 @@ def get_production_summary(current_user):
     end_date = request.args.get("end_date")
 
     rows = sheets_client.read_rows("Production_Summary")
+    if not rows:
+        entries = sheets_client.read_rows("Daily_Entries")
+        date_map = {}
+        for e in entries:
+            d = str(e.get("entry_date", "")).split("T")[0]
+            if not d:
+                continue
+            used = float(e.get("used_quantity", 0) or 0)
+            cutbit = float(e.get("cutbit_used", 0) or 0)
+            if d not in date_map:
+                date_map[d] = {"date": d, "total_punching": 0.0, "total_cutbit": 0.0, "count": 0, "updated_at": e.get("created_at", "")}
+            date_map[d]["total_punching"] += used
+            date_map[d]["total_cutbit"] += cutbit
+            date_map[d]["count"] += 1
+
+        rows = [{
+            "production_id": f"PROD-{i+1}",
+            "date": d_data["date"],
+            "total_punching": d_data["total_punching"],
+            "total_cutbit": d_data["total_cutbit"],
+            "remarks": f"Aggregated from {d_data['count']} transaction(s)",
+            "updated_at": d_data["updated_at"]
+        } for i, d_data in enumerate(date_map.values())]
+
     filtered = []
 
     for r in rows:

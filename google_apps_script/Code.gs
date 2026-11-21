@@ -214,6 +214,10 @@ function handleRequest(e, defaultMethod) {
       if (method === "DELETE") responseData = deleteDailyEntry(entryId);
       else if (method === "PUT") responseData = updateDailyEntry(entryId, body);
     }
+    // Production Summary Routes
+    else if (endpoint === "production") {
+      responseData = getProductionSummary(params.date, params.start_date, params.end_date);
+    }
     // Dashboard Routes
     else if (endpoint === "dashboard/summary") {
       responseData = getDashboardSummary(params);
@@ -806,6 +810,70 @@ function restoreDefaultMaterials() {
   ]);
   sheet.getRange(2, 1, matRows.length, matRows[0].length).setValues(matRows);
   return { success: true, restored_count: matRows.length, materials: getMaterials().materials };
+}
+
+function getProductionSummary(specificDate, startDate, endDate) {
+  // Aggregate dynamically from Daily_Entries so all logged transactions are instantly visible
+  const entries = getSheetRows("Daily_Entries");
+  const dateMap = {};
+
+  entries.forEach(e => {
+    let d = e.entry_date;
+    if (d instanceof Date) {
+      d = Utilities.formatDate(d, Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd");
+    } else if (d) {
+      d = String(d).split("T")[0];
+    }
+    if (!d) return;
+
+    if (specificDate && d !== specificDate) return;
+    if (startDate && d < startDate) return;
+    if (endDate && d > endDate) return;
+
+    const used = parseFloat(e.used_quantity) || 0;
+    const cutbit = parseFloat(e.cutbit_used) || 0;
+
+    if (!dateMap[d]) {
+      dateMap[d] = {
+        date: d,
+        total_punching: 0,
+        total_cutbit: 0,
+        entry_count: 0,
+        last_updated: e.updated_at || e.created_at || ""
+      };
+    }
+
+    dateMap[d].total_punching += used;
+    dateMap[d].total_cutbit += cutbit;
+    dateMap[d].entry_count += 1;
+    if (e.updated_at && String(e.updated_at) > String(dateMap[d].last_updated)) {
+      dateMap[d].last_updated = e.updated_at;
+    }
+  });
+
+  const productionList = Object.values(dateMap).map((p, idx) => {
+    const tp = Math.round(p.total_punching * 100) / 100;
+    const tc = Math.round(p.total_cutbit * 100) / 100;
+    return {
+      summary_id: "PROD-" + (idx + 1),
+      date: p.date,
+      total_punching: tp,
+      total_punching_display: String(tp),
+      total_cutbit: tc,
+      total_cutbit_display: String(tc),
+      remarks: `Aggregated from ${p.entry_count} transaction(s)`,
+      updated_at: p.last_updated || new Date().toISOString()
+    };
+  });
+
+  // Sort by date descending
+  productionList.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+  return {
+    success: true,
+    count: productionList.length,
+    production: productionList
+  };
 }
 
 function resolveDateRange(filterType, customStart, customEnd) {

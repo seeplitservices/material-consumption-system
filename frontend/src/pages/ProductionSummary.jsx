@@ -38,11 +38,42 @@ export default function ProductionSummary() {
   const avgPunching = productionList.length > 0 ? (totalPunching / productionList.length).toFixed(1) : '0.0';
 
   const columns = [
-    { key: 'date', label: 'Production Date', className: 'w-32 font-mono font-bold text-xs' },
-    { key: 'total_punching_display', label: 'Total Sheet Punching', render: val => <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-sm">{val} sheets</span> },
-    { key: 'total_cutbit_display', label: 'Cutbit / Off-cuts Used', render: val => <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">{val}</span> },
+    {
+      key: 'date',
+      label: 'Production Date',
+      className: 'w-32 font-mono font-bold text-xs',
+      render: (val) => (val ? String(val).split('T')[0] : '--')
+    },
+    {
+      key: 'total_punching_display',
+      label: 'Total Sheet Punching',
+      render: (val, row) => {
+        const v = val ?? row.total_punching ?? 0;
+        return <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-sm">{v} sheets</span>;
+      }
+    },
+    {
+      key: 'total_cutbit_display',
+      label: 'Cutbit / Off-cuts Used',
+      render: (val, row) => {
+        const v = val ?? row.total_cutbit ?? 0;
+        return <span className="font-mono font-bold text-amber-600 dark:text-amber-400 text-xs">{v}</span>;
+      }
+    },
     { key: 'remarks', label: 'Production Notes / References', render: val => <span className="text-slate-500 text-xs">{val || '--'}</span> },
-    { key: 'updated_at', label: 'Last Updated', render: val => <span className="font-mono text-[11px] text-slate-400">{val ? new Date(val).toLocaleTimeString() : '--'}</span> }
+    {
+      key: 'updated_at',
+      label: 'Last Updated',
+      render: val => {
+        if (!val) return '--';
+        try {
+          const d = new Date(val);
+          return isNaN(d.getTime()) ? String(val).split('T')[0] : d.toLocaleString();
+        } catch {
+          return String(val);
+        }
+      }
+    }
   ];
 
   return (
