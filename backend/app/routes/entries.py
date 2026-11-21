@@ -337,7 +337,7 @@ def update_daily_entry(current_user, entry_id):
         if field in data:
             updated[field] = data[field]
 
-    if any(k in data for k in ["used_quantity", "scrap_weight", "weight_per_sheet"]):
+    if any(k in data for k in ["used_quantity", "scrap_weight", "weight_per_sheet", "opening_stock"]):
         op_stock = float(data.get("opening_stock", target.get("opening_stock", 0)))
         used_q = float(data.get("used_quantity", target.get("used_quantity", 0)))
         scrap_w = float(data.get("scrap_weight", target.get("scrap_weight", 0)))
@@ -367,6 +367,22 @@ def update_daily_entry(current_user, entry_id):
 
     updated["updated_at"] = now
     sheets_client.update_row_by_id("Daily_Entries", "entry_id", entry_id, updated)
+
+    # Sync Material_Stock record if it exists
+    mat_id = target.get("material_id")
+    entry_date = target.get("entry_date")
+    if mat_id and entry_date:
+        stocks = sheets_client.read_rows("Material_Stock")
+        for s in reversed(stocks):
+            if s.get("material_id") == mat_id and s.get("date") == entry_date:
+                s_copy = dict(s)
+                s_copy["opening_stock"] = updated.get("opening_stock")
+                s_copy["punching_stock"] = updated.get("used_quantity")
+                s_copy["closing_stock"] = updated.get("closing_stock")
+                s_copy["updated_by"] = current_user.get("name", "Operator")
+                s_copy["updated_at"] = now
+                sheets_client.update_row_by_id("Material_Stock", "stock_id", s.get("stock_id"), s_copy)
+                break
 
     _sync_production_summary(updated.get("entry_date"))
 

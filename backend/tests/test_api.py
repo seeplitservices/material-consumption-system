@@ -296,6 +296,52 @@ def test_delete_daily_entry_by_operator(client):
     res_list_after = client.get("/api/entries", headers=headers)
     assert not any(e["entry_id"] == entry_id for e in res_list_after.get_json()["entries"])
 
+def test_operator_can_edit_historical_entry(client):
+    """
+    Test requirement:
+    - Operator / Data Entry User can edit a historical entry in Historical Records.
+    - Updated used_quantity and opening_stock reconciles closing stock correctly.
+    """
+    op_token = get_operator_token(client)
+    headers = {"Authorization": f"Bearer {op_token}"}
+
+    # Create entry
+    create_payload = {
+        "entry_date": "2026-11-20",
+        "shift": "Day",
+        "job_number": "EDIT-TEST-001",
+        "rows": [
+            {
+                "material_id": "MAT-01",
+                "opening_stock": 60,
+                "used_quantity": 4,
+                "cutbit_used": 0.5,
+                "remarks": "Original entry"
+            }
+        ]
+    }
+    create_res = client.post("/api/entries", json=create_payload, headers=headers)
+    assert create_res.status_code == 201
+    entry_id = create_res.get_json()["entries"][0]["entry_id"]
+
+    # Operator edits the entry: changes used_quantity to 6, cutbit to 1.0, remarks
+    edit_payload = {
+        "job_number": "EDIT-TEST-001-MOD",
+        "shift": "Night",
+        "opening_stock": 60,
+        "used_quantity": 6,
+        "cutbit_used": 1.0,
+        "remarks": "Corrected by operator"
+    }
+    edit_res = client.put(f"/api/entries/{entry_id}", json=edit_payload, headers=headers)
+    assert edit_res.status_code == 200
+    updated = edit_res.get_json()["entry"]
+    assert updated["used_quantity"] == 6.0
+    assert updated["closing_stock"] == 54.0  # 60 - 6
+    assert updated["shift"] == "Night"
+    assert updated["job_number"] == "EDIT-TEST-001-MOD"
+    assert updated["remarks"] == "Corrected by operator"
+
 def test_overall_scrap_and_no_received(client):
     """
     Test requirement:

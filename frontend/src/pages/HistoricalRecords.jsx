@@ -26,6 +26,9 @@ export default function HistoricalRecords() {
   // Edit Modal State
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState(null);
+  const [editJobNumber, setEditJobNumber] = useState('');
+  const [editShift, setEditShift] = useState('Day');
+  const [editOpeningStock, setEditOpeningStock] = useState('');
   const [editUsedQty, setEditUsedQty] = useState('');
   const [editCutbit, setEditCutbit] = useState('');
   const [editRemarks, setEditRemarks] = useState('');
@@ -56,8 +59,11 @@ export default function HistoricalRecords() {
 
   const openEditModal = (entry) => {
     setSelectedEntry(entry);
-    setEditUsedQty(String(entry.used_quantity || 0));
-    setEditCutbit(String(entry.cutbit_used || 0));
+    setEditJobNumber(entry.job_number || '');
+    setEditShift(entry.shift || 'Day');
+    setEditOpeningStock(String(entry.opening_stock ?? 0));
+    setEditUsedQty(String(entry.used_quantity ?? 0));
+    setEditCutbit(String(entry.cutbit_used ?? 0));
     setEditRemarks(entry.remarks || '');
     setIsEditOpen(true);
   };
@@ -66,17 +72,27 @@ export default function HistoricalRecords() {
     e.preventDefault();
     if (!selectedEntry) return;
 
+    const opStockNum = parseFloat(editOpeningStock);
+    const usedQtyNum = parseFloat(editUsedQty);
+    if (isNaN(opStockNum) || isNaN(usedQtyNum)) {
+      setToast({ type: 'error', message: 'Please enter valid numerical values for opening stock and used sheets.' });
+      return;
+    }
+
     setEditSubmitting(true);
     try {
       const payload = {
-        used_quantity: parseFloat(editUsedQty),
-        cutbit_used: parseFloat(editCutbit),
+        job_number: editJobNumber.trim(),
+        shift: editShift,
+        opening_stock: opStockNum,
+        used_quantity: usedQtyNum,
+        cutbit_used: parseFloat(editCutbit || 0),
         remarks: editRemarks.trim()
       };
 
       const res = await api.put(`/api/entries/${selectedEntry.entry_id}`, payload);
       if (res.success) {
-        setToast({ type: 'success', message: 'Transaction updated and audited in Google Sheets.' });
+        setToast({ type: 'success', message: `Transaction ${selectedEntry.entry_id} updated and reconciled successfully.` });
         setIsEditOpen(false);
         fetchEntries();
       }
@@ -130,18 +146,16 @@ export default function HistoricalRecords() {
       sortable: false,
       render: (_, row) => (
         <div className="flex items-center gap-1.5">
-          {isDirector && (
-            <button
-              onClick={() => openEditModal(row)}
-              className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 transition-colors"
-              title="Edit transaction record"
-            >
-              <Edit className="w-3.5 h-3.5 text-sky-500" />
-            </button>
-          )}
+          <button
+            onClick={() => openEditModal(row)}
+            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-sky-50 dark:hover:bg-sky-950/40 text-slate-600 dark:text-slate-300 hover:text-sky-600 dark:hover:text-sky-400 transition-colors"
+            title="Edit transaction record"
+          >
+            <Edit className="w-3.5 h-3.5 text-sky-500" />
+          </button>
           <button
             onClick={() => setDeleteConfirm({ isOpen: true, entry: row })}
-            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"
+            className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-500 transition-colors"
             title="Delete historical entry"
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -244,29 +258,98 @@ export default function HistoricalRecords() {
             </div>
 
             <form onSubmit={handleEditSubmit} className="p-6 space-y-4 text-xs">
-              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 flex justify-between items-center">
-                <span className="font-medium text-slate-600 dark:text-slate-300">Material:</span>
-                <span className="font-bold text-slate-900 dark:text-slate-100">{selectedEntry.material_name}</span>
+              <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 flex justify-between items-center">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Material</span>
+                  <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{selectedEntry.material_name}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Unit Wt</span>
+                  <span className="font-mono font-semibold text-xs text-slate-700 dark:text-slate-300">
+                    {selectedEntry.weight_per_sheet ? `${Number(selectedEntry.weight_per_sheet).toFixed(2)} kg/sheet` : 'N/A'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Job / Project Ref
+                  </label>
+                  <input
+                    type="text"
+                    value={editJobNumber}
+                    onChange={e => setEditJobNumber(e.target.value)}
+                    placeholder="e.g. JOB-102"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono focus:ring-1 focus:ring-sky-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Production Shift
+                  </label>
+                  <select
+                    value={editShift}
+                    onChange={e => setEditShift(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-sky-500"
+                  >
+                    <option value="Day">Day Shift</option>
+                    <option value="Night">Night Shift</option>
+                    <option value="General">General Shift</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Opening Stock (Sheets)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editOpeningStock}
+                    onChange={e => setEditOpeningStock(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono focus:ring-1 focus:ring-sky-500"
+                  />
+                </div>
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Used / Punching (Sheets)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={editUsedQty}
+                    onChange={e => setEditUsedQty(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono focus:ring-1 focus:ring-sky-500"
+                  />
+                </div>
+              </div>
+
+              {/* Live Reconciliation Preview */}
+              <div className="p-3 rounded-xl bg-sky-50/70 dark:bg-sky-950/30 border border-sky-100 dark:border-sky-900/50 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] text-sky-700 dark:text-sky-300 font-medium block">Recalculated Closing Stock</span>
+                  <span className="text-sm font-mono font-bold text-sky-900 dark:text-sky-200">
+                    {(parseFloat(editOpeningStock || 0) - parseFloat(editUsedQty || 0)).toFixed(2)} sheets
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-sky-700 dark:text-sky-300 font-medium block">Total Input Weight</span>
+                  <span className="text-sm font-mono font-bold text-sky-900 dark:text-sky-200">
+                    {(parseFloat(editUsedQty || 0) * (parseFloat(selectedEntry.weight_per_sheet) || 0)).toFixed(2)} kg
+                  </span>
+                </div>
               </div>
 
               <div>
-                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Used / Punching Quantity (Sheets)
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={editUsedQty}
-                  onChange={e => setEditUsedQty(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
-                />
-              </div>
-
-              <div>
-                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                  Cutbit Used (pieces)
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Cutbit Used (pieces / kg)
                 </label>
                 <input
                   type="number"
@@ -274,19 +357,19 @@ export default function HistoricalRecords() {
                   min="0"
                   value={editCutbit}
                   onChange={e => setEditCutbit(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono focus:ring-1 focus:ring-sky-500"
                 />
               </div>
 
               <div>
-                <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
                   Modification Reason & Remarks
                 </label>
                 <textarea
                   value={editRemarks}
                   onChange={e => setEditRemarks(e.target.value)}
                   rows={2}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-sky-500"
                   placeholder="Reason for modifying this historical entry..."
                 />
               </div>
@@ -295,16 +378,16 @@ export default function HistoricalRecords() {
                 <button
                   type="button"
                   onClick={() => setIsEditOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium"
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-medium hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={editSubmitting}
-                  className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-semibold shadow-xs disabled:opacity-50"
+                  className="px-4 py-2 rounded-xl bg-sky-600 hover:bg-sky-500 active:bg-sky-700 text-white font-semibold shadow-xs transition-all disabled:opacity-50"
                 >
-                  {editSubmitting ? 'Updating...' : 'Save & Reconcile'}
+                  {editSubmitting ? 'Updating & Reconciling...' : 'Save & Reconcile'}
                 </button>
               </div>
             </form>
