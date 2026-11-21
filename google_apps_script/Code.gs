@@ -261,7 +261,11 @@ function getSheetRows(sheetName) {
   for (let i = 1; i < values.length; i++) {
     const rowObj = {};
     for (let j = 0; j < headers.length; j++) {
-      rowObj[headers[j]] = values[i][j];
+      let val = values[i][j];
+      if (val instanceof Date) {
+        val = Utilities.formatDate(val, ss.getSpreadsheetTimeZone() || "Asia/Kolkata", "yyyy-MM-dd");
+      }
+      rowObj[headers[j]] = val;
     }
     rows.push(rowObj);
   }
@@ -588,16 +592,65 @@ function createDailyEntry(body) {
 }
 
 function getDailyEntries(startDate, endDate, specificDate) {
-  let entries = getSheetRows("Daily_Entries");
+  const rawEntries = getSheetRows("Daily_Entries");
 
+  const formatted = rawEntries.map(e => {
+    let dateStr = "";
+    if (e.entry_date instanceof Date) {
+      dateStr = Utilities.formatDate(e.entry_date, Session.getScriptTimeZone() || "GMT", "yyyy-MM-dd");
+    } else if (e.entry_date) {
+      dateStr = String(e.entry_date).split("T")[0];
+    }
+
+    const op = (e.opening_stock !== "" && e.opening_stock !== null && e.opening_stock !== undefined) ? parseFloat(e.opening_stock) : 0;
+    const used = (e.used_quantity !== "" && e.used_quantity !== null && e.used_quantity !== undefined) ? parseFloat(e.used_quantity) : 0;
+    const cl = (e.closing_stock !== "" && e.closing_stock !== null && e.closing_stock !== undefined) ? parseFloat(e.closing_stock) : (op - used);
+    const wt = parseFloat(e.weight_per_sheet) || 0;
+    const totWt = (e.total_input_weight !== "" && e.total_input_weight !== null && e.total_input_weight !== undefined) ? parseFloat(e.total_input_weight) : (used * wt);
+    const cutbit = parseFloat(e.cutbit_used) || 0;
+    const scrap = parseFloat(e.scrap_weight) || 0;
+    const net = (e.net_consumption !== "" && e.net_consumption !== null && e.net_consumption !== undefined) ? parseFloat(e.net_consumption) : Math.max(0, totWt - scrap);
+    const wast = (e.wastage_percentage !== "" && e.wastage_percentage !== null && e.wastage_percentage !== undefined) ? parseFloat(e.wastage_percentage) : (totWt > 0 ? (scrap / totWt) * 100 : 0);
+
+    return Object.assign({}, e, {
+      entry_date: dateStr,
+      opening_stock: op,
+      opening_stock_display: String(op),
+      used_quantity: used,
+      used_quantity_display: String(used),
+      closing_stock: cl,
+      closing_stock_display: String(cl),
+      weight_per_sheet: wt,
+      weight_per_sheet_display: wt > 0 ? wt.toFixed(2) : "0.00",
+      total_input_weight: totWt,
+      total_input_weight_display: totWt > 0 ? totWt.toFixed(2) : "0.00",
+      cutbit_used: cutbit,
+      cutbit_used_display: String(cutbit),
+      scrap_weight: scrap,
+      scrap_weight_display: scrap > 0 ? scrap.toFixed(2) : "0.00",
+      net_consumption: net,
+      net_consumption_display: net > 0 ? net.toFixed(2) : "0.00",
+      wastage_percentage: Math.round(wast * 100) / 100,
+      wastage_percentage_display: wast > 0 ? (Math.round(wast * 100) / 100).toFixed(2) + "%" : "0.00%"
+    });
+  });
+
+  let filtered = formatted;
   if (specificDate) {
-    entries = entries.filter(e => e.entry_date === specificDate);
+    filtered = filtered.filter(e => e.entry_date === specificDate);
   } else {
-    if (startDate) entries = entries.filter(e => e.entry_date >= startDate);
-    if (endDate) entries = entries.filter(e => e.entry_date <= endDate);
+    if (startDate) filtered = filtered.filter(e => e.entry_date >= startDate);
+    if (endDate) filtered = filtered.filter(e => e.entry_date <= endDate);
   }
 
-  return { success: true, count: entries.length, entries: entries };
+  filtered.sort((a, b) => {
+    const da = String(a.entry_date || "");
+    const db = String(b.entry_date || "");
+    if (db !== da) return db.localeCompare(da);
+    return String(b.created_at || "").localeCompare(String(a.created_at || ""));
+  });
+
+  return { success: true, count: filtered.length, entries: filtered };
 }
 
 function deleteDailyEntry(entryId) {
@@ -683,6 +736,31 @@ function getCustomRangeReport(startDate, endDate) {
     return m;
   });
 
+  const formattedRecords = entries.map(e => {
+    const op = (e.opening_stock !== "" && e.opening_stock !== null && e.opening_stock !== undefined) ? parseFloat(e.opening_stock) : 0;
+    const used = (e.used_quantity !== "" && e.used_quantity !== null && e.used_quantity !== undefined) ? parseFloat(e.used_quantity) : 0;
+    const cl = (e.closing_stock !== "" && e.closing_stock !== null && e.closing_stock !== undefined) ? parseFloat(e.closing_stock) : (op - used);
+    const wt = parseFloat(e.weight_per_sheet) || 0;
+    const totWt = (e.total_input_weight !== "" && e.total_input_weight !== null && e.total_input_weight !== undefined) ? parseFloat(e.total_input_weight) : (used * wt);
+    const cutbit = parseFloat(e.cutbit_used) || 0;
+
+    return Object.assign({}, e, {
+      entry_date: String(e.entry_date || "").split("T")[0],
+      opening_stock: op,
+      opening_stock_display: String(op),
+      used_quantity: used,
+      used_quantity_display: String(used),
+      closing_stock: cl,
+      closing_stock_display: String(cl),
+      weight_per_sheet: wt,
+      weight_per_sheet_display: wt > 0 ? wt.toFixed(2) : "0.00",
+      total_input_weight: totWt,
+      total_input_weight_display: totWt > 0 ? totWt.toFixed(2) : "0.00",
+      cutbit_used: cutbit,
+      cutbit_used_display: String(cutbit)
+    });
+  });
+
   return {
     success: true,
     start_date: startDate || "Earliest",
@@ -697,7 +775,7 @@ function getCustomRangeReport(startDate, endDate) {
       wastage_percentage: Math.round(wastagePct * 100) / 100
     },
     materials: materials,
-    records: entries
+    records: formattedRecords
   };
 }
 

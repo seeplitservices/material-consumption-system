@@ -56,6 +56,7 @@ def get_daily_entries(current_user):
 
         filtered.append({
             **r,
+            "entry_date": ed.split("T")[0] if "T" in str(ed) else str(ed),
             "weight_per_sheet_display": round_display(wt_sheet),
             "total_input_weight_display": round_display(tot_wt),
             "scrap_weight_display": round_display(sc_wt),

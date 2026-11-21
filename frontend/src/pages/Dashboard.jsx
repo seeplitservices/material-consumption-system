@@ -355,7 +355,7 @@ export default function Dashboard({ onNavigateToEntry }) {
                   ) : (
                     recentTxs.map(tx => (
                       <tr key={tx.entry_id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-2.5 px-3">{tx.entry_date}</td>
+                        <td className="py-2.5 px-3">{tx.entry_date ? String(tx.entry_date).split('T')[0] : '--'}</td>
                         <td className="py-2.5 px-3 font-sans">
                           <span className="font-semibold text-slate-800">{tx.job_number || 'N/A'}</span>
                           <span className="text-[10px] text-slate-500 block">{tx.shift}</span>
@@ -363,12 +363,12 @@ export default function Dashboard({ onNavigateToEntry }) {
                         <td className="py-2.5 px-3 font-sans font-medium text-slate-800">
                           {tx.material_name}
                         </td>
-                        <td className="py-2.5 px-3 font-bold text-sky-600">{tx.used_quantity}</td>
-                        <td className="py-2.5 px-3">{tx.total_input_weight} kg</td>
-                        <td className="py-2.5 px-3 text-amber-600 font-semibold">{tx.scrap_weight} kg</td>
-                        <td className="py-2.5 px-3 font-semibold text-rose-500">{tx.wastage_percentage}%</td>
-                        <td className="py-2.5 px-3 font-semibold text-slate-900">{tx.closing_stock}</td>
-                        <td className="py-2.5 px-3 font-sans text-slate-600">{tx.employee}</td>
+                        <td className="py-2.5 px-3 font-bold text-sky-600">{tx.used_quantity ?? tx.used_quantity_display ?? 0}</td>
+                        <td className="py-2.5 px-3">{Number(tx.total_input_weight ?? tx.total_input_weight_display ?? 0).toFixed(2)} kg</td>
+                        <td className="py-2.5 px-3 text-amber-600 font-semibold">{Number(tx.scrap_weight ?? tx.scrap_weight_display ?? 0).toFixed(2)} kg</td>
+                        <td className="py-2.5 px-3 font-semibold text-rose-500">{Number(tx.wastage_percentage ?? tx.wastage_percentage_display ?? 0).toFixed(2)}%</td>
+                        <td className="py-2.5 px-3 font-semibold text-slate-900">{tx.closing_stock ?? tx.closing_stock_display ?? 0}</td>
+                        <td className="py-2.5 px-3 font-sans text-slate-600">{tx.employee || '--'}</td>
                       </tr>
                     ))
                   )}

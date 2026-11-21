@@ -46,7 +46,47 @@ export default function HistoricalRecords() {
       });
       const res = await api.get(`/api/entries?${params.toString()}`);
       if (res.success) {
-        setEntries(res.entries || []);
+        const rawList = res.entries || [];
+        const normalized = rawList.map(r => {
+          let dateStr = r.entry_date || '';
+          if (typeof dateStr === 'string' && dateStr.includes('T')) {
+            dateStr = dateStr.split('T')[0];
+          }
+          const op = (r.opening_stock !== undefined && r.opening_stock !== null && r.opening_stock !== '') ? Number(r.opening_stock) : 0;
+          const used = (r.used_quantity !== undefined && r.used_quantity !== null && r.used_quantity !== '') ? Number(r.used_quantity) : 0;
+          const cl = (r.closing_stock !== undefined && r.closing_stock !== null && r.closing_stock !== '') ? Number(r.closing_stock) : (op - used);
+          const wt = Number(r.weight_per_sheet) || 0;
+          const inputWt = (r.total_input_weight !== undefined && r.total_input_weight !== null && r.total_input_weight !== '')
+            ? Number(r.total_input_weight)
+            : (used * wt);
+          const cutbit = Number(r.cutbit_used) || 0;
+
+          return {
+            ...r,
+            entry_date: dateStr,
+            opening_stock: op,
+            opening_stock_display: (r.opening_stock_display !== undefined && r.opening_stock_display !== null && r.opening_stock_display !== '')
+              ? String(r.opening_stock_display)
+              : String(op),
+            used_quantity: used,
+            used_quantity_display: (r.used_quantity_display !== undefined && r.used_quantity_display !== null && r.used_quantity_display !== '')
+              ? String(r.used_quantity_display)
+              : String(used),
+            closing_stock: cl,
+            closing_stock_display: (r.closing_stock_display !== undefined && r.closing_stock_display !== null && r.closing_stock_display !== '')
+              ? String(r.closing_stock_display)
+              : String(cl),
+            total_input_weight: inputWt,
+            total_input_weight_display: (r.total_input_weight_display !== undefined && r.total_input_weight_display !== null && r.total_input_weight_display !== '')
+              ? String(r.total_input_weight_display)
+              : inputWt.toFixed(2),
+            cutbit_used: cutbit,
+            cutbit_used_display: (r.cutbit_used_display !== undefined && r.cutbit_used_display !== null && r.cutbit_used_display !== '')
+              ? String(r.cutbit_used_display)
+              : String(cutbit),
+          };
+        });
+        setEntries(normalized);
       }
     } catch (err) {
       setError(err.message || 'Failed to fetch historical entries.');
@@ -64,9 +104,9 @@ export default function HistoricalRecords() {
     setEditJobNumber(entry.job_number || '');
     setEditShift(entry.shift || 'Day');
     setEditEmployee(entry.employee || '');
-    setEditOpeningStock(String(entry.opening_stock ?? 0));
-    setEditUsedQty(String(entry.used_quantity ?? 0));
-    setEditCutbit(String(entry.cutbit_used ?? 0));
+    setEditOpeningStock(String(entry.opening_stock ?? entry.opening_stock_display ?? 0));
+    setEditUsedQty(String(entry.used_quantity ?? entry.used_quantity_display ?? 0));
+    setEditCutbit(String(entry.cutbit_used ?? entry.cutbit_used_display ?? 0));
     setEditRemarks(entry.remarks || '');
     setIsEditOpen(true);
   };
@@ -126,7 +166,16 @@ export default function HistoricalRecords() {
 
   const columns = [
     { key: 'entry_id', label: 'Entry ID', className: 'w-24 font-mono text-[11px] text-slate-500' },
-    { key: 'entry_date', label: 'Date', className: 'w-24 font-mono text-xs' },
+    {
+      key: 'entry_date',
+      label: 'Date',
+      className: 'w-28 font-mono text-xs',
+      render: (val) => {
+        if (!val) return '--';
+        const str = String(val);
+        return str.includes('T') ? str.split('T')[0] : str;
+      }
+    },
     {
       key: 'job_number',
       label: 'Job / Shift',
@@ -138,12 +187,52 @@ export default function HistoricalRecords() {
       )
     },
     { key: 'material_name', label: 'Material', render: val => <span className="font-medium text-xs">{val}</span> },
-    { key: 'opening_stock_display', label: 'Opening', render: val => <span className="font-mono text-xs text-slate-500">{val}</span> },
-    { key: 'used_quantity_display', label: 'Used Sheets', render: val => <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-xs">{val}</span> },
-    { key: 'closing_stock_display', label: 'Closing', render: val => <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">{val}</span> },
-    { key: 'total_input_weight_display', label: 'Input Wt (kg)', render: val => <span className="font-mono font-semibold text-xs">{val} kg</span> },
-    { key: 'cutbit_used_display', label: 'Cutbit', render: val => <span className="font-mono text-xs">{val}</span> },
-    { key: 'employee', label: 'Operator', render: val => <span className="text-slate-500 text-[11px]">{val}</span> },
+    {
+      key: 'opening_stock_display',
+      label: 'Opening',
+      render: (val, row) => {
+        const v = (val !== undefined && val !== null && val !== '') ? val : (row.opening_stock ?? 0);
+        return <span className="font-mono text-xs text-slate-500">{String(v)}</span>;
+      }
+    },
+    {
+      key: 'used_quantity_display',
+      label: 'Used Sheets',
+      render: (val, row) => {
+        const v = (val !== undefined && val !== null && val !== '') ? val : (row.used_quantity ?? 0);
+        return <span className="font-mono font-bold text-sky-600 dark:text-sky-400 text-xs">{String(v)}</span>;
+      }
+    },
+    {
+      key: 'closing_stock_display',
+      label: 'Closing',
+      render: (val, row) => {
+        const v = (val !== undefined && val !== null && val !== '') ? val : (row.closing_stock ?? 0);
+        return <span className="font-mono font-bold text-slate-900 dark:text-slate-100 text-xs">{String(v)}</span>;
+      }
+    },
+    {
+      key: 'total_input_weight_display',
+      label: 'Input Wt (kg)',
+      render: (val, row) => {
+        let v = val;
+        if (!v && row.total_input_weight !== undefined && row.total_input_weight !== null) {
+          v = Number(row.total_input_weight).toFixed(2);
+        } else if (!v && row.used_quantity && row.weight_per_sheet) {
+          v = (Number(row.used_quantity) * Number(row.weight_per_sheet)).toFixed(2);
+        }
+        return <span className="font-mono font-semibold text-xs">{v || '0.00'} kg</span>;
+      }
+    },
+    {
+      key: 'cutbit_used_display',
+      label: 'Cutbit',
+      render: (val, row) => {
+        const v = (val !== undefined && val !== null && val !== '') ? val : (row.cutbit_used ?? 0);
+        return <span className="font-mono text-xs">{String(v)}</span>;
+      }
+    },
+    { key: 'employee', label: 'Operator', render: val => <span className="text-slate-500 text-[11px]">{val || '--'}</span> },
     {
       key: 'actions',
       label: 'Actions',

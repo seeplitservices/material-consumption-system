@@ -108,19 +108,24 @@ export default function Reports() {
 
   // Custom Range Columns
   const customTransactionColumns = [
-    { key: 'entry_date', label: 'Date', className: 'w-24 font-mono text-xs' },
+    {
+      key: 'entry_date',
+      label: 'Date',
+      className: 'w-24 font-mono text-xs',
+      render: val => (val ? String(val).split('T')[0] : '--')
+    },
     { key: 'job_number', label: 'Job Ref', render: (val, row) => `${val || 'N/A'} (${row.shift || 'Day'})` },
     { key: 'material_name', label: 'Material', render: val => <span className="font-semibold text-xs">{val}</span> },
-    { key: 'opening_stock', label: 'Opening', render: val => <span className="font-mono text-slate-500">{val}</span> },
-    { key: 'used_quantity', label: 'Used Sheets', render: val => <span className="font-mono font-bold text-sky-600 dark:text-sky-400">{val}</span> },
-    { key: 'closing_stock', label: 'Closing', render: val => <span className="font-mono font-bold text-slate-800 dark:text-slate-100">{val}</span> },
-    { key: 'weight_per_sheet', label: 'Wt/Sh (kg)', render: val => <span className="font-mono text-slate-500">{Number(val || 0).toFixed(2)}</span> },
-    { key: 'total_input_weight', label: 'Input Wt (kg)', render: val => <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{Number(val || 0).toFixed(2)}</span> },
-    { key: 'scrap_weight', label: 'Scrap (kg)', render: val => <span className="font-mono text-amber-600 dark:text-amber-400 font-semibold">{Number(val || 0).toFixed(2)}</span> },
-    { key: 'net_consumption', label: 'Net (kg)', render: val => <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{Number(val || 0).toFixed(2)}</span> },
-    { key: 'wastage_percentage', label: 'Wastage %', render: val => <span className="font-mono text-rose-500 font-semibold">{Number(val || 0).toFixed(2)}%</span> },
-    { key: 'cutbit_used', label: 'Cutbit', render: val => <span className="font-mono text-xs">{val || 0}</span> },
-    { key: 'employee', label: 'Operator', render: val => <span className="text-slate-500 text-[11px]">{val}</span> }
+    { key: 'opening_stock', label: 'Opening', render: (val, row) => <span className="font-mono text-slate-500">{val ?? row.opening_stock_display ?? 0}</span> },
+    { key: 'used_quantity', label: 'Used Sheets', render: (val, row) => <span className="font-mono font-bold text-sky-600 dark:text-sky-400">{val ?? row.used_quantity_display ?? 0}</span> },
+    { key: 'closing_stock', label: 'Closing', render: (val, row) => <span className="font-mono font-bold text-slate-800 dark:text-slate-100">{val ?? row.closing_stock_display ?? 0}</span> },
+    { key: 'weight_per_sheet', label: 'Wt/Sh (kg)', render: (val, row) => <span className="font-mono text-slate-500">{Number(val ?? row.weight_per_sheet_display ?? 0).toFixed(2)}</span> },
+    { key: 'total_input_weight', label: 'Input Wt (kg)', render: (val, row) => <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{Number(val ?? row.total_input_weight_display ?? (row.used_quantity * row.weight_per_sheet) ?? 0).toFixed(2)}</span> },
+    { key: 'scrap_weight', label: 'Scrap (kg)', render: (val, row) => <span className="font-mono text-amber-600 dark:text-amber-400 font-semibold">{Number(val ?? row.scrap_weight_display ?? 0).toFixed(2)}</span> },
+    { key: 'net_consumption', label: 'Net (kg)', render: (val, row) => <span className="font-mono text-emerald-600 dark:text-emerald-400 font-bold">{Number(val ?? row.net_consumption_display ?? 0).toFixed(2)}</span> },
+    { key: 'wastage_percentage', label: 'Wastage %', render: (val, row) => <span className="font-mono text-rose-500 font-semibold">{Number(val ?? row.wastage_percentage_display ?? 0).toFixed(2)}%</span> },
+    { key: 'cutbit_used', label: 'Cutbit', render: (val, row) => <span className="font-mono text-xs">{val ?? row.cutbit_used_display ?? 0}</span> },
+    { key: 'employee', label: 'Operator', render: val => <span className="text-slate-500 text-[11px]">{val || '--'}</span> }
   ];
 
   const customMaterialSummaryColumns = [
