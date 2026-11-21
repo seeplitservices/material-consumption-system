@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Shield, User, Lock, Mail, CheckCircle2, X } from 'lucide-react';
+import { Users, Plus, Shield, User, Lock, Mail, CheckCircle2, X, Trash2 } from 'lucide-react';
 import DataTable from '../components/DataTable';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
 import Toast from '../components/Toast';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { api } from '../services/api';
 
 export default function UserManagement() {
@@ -19,6 +20,10 @@ export default function UserManagement() {
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('Employee');
   const [submitting, setSubmitting] = useState(false);
+
+  // Delete User State
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, user: null });
+  const [deleting, setDeleting] = useState(false);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -121,8 +126,39 @@ export default function UserManagement() {
         </button>
       )
     },
-    { key: 'created_at', label: 'Registered Date', className: 'font-mono text-[11px] text-slate-400' }
+    { key: 'created_at', label: 'Registered Date', className: 'font-mono text-[11px] text-slate-400' },
+    {
+      key: 'actions',
+      label: 'Action',
+      sortable: false,
+      render: (_, row) => (
+        <button
+          onClick={() => setDeleteConfirm({ isOpen: true, user: row })}
+          className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"
+          title="Delete User Account"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      )
+    }
   ];
+
+  const handleDeleteUser = async () => {
+    if (!deleteConfirm.user) return;
+    setDeleting(true);
+    try {
+      const res = await api.delete(`/api/auth/users/${deleteConfirm.user.user_id}`);
+      if (res.success) {
+        setToast({ type: 'success', message: `User "${deleteConfirm.user.email}" removed from Google Sheets.` });
+        fetchUsers();
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: err.message || 'Failed to delete user.' });
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm({ isOpen: false, user: null });
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -252,6 +288,17 @@ export default function UserManagement() {
           </div>
         </div>
       )}
+
+      {/* Delete User Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title="Delete User Account"
+        message={`Are you sure you want to permanently delete user account "${deleteConfirm.user?.email}" from Google Sheets?`}
+        onConfirm={handleDeleteUser}
+        onCancel={() => setDeleteConfirm({ isOpen: false, user: null })}
+        confirmText={deleting ? "Deleting..." : "Yes, Delete User"}
+        confirmVariant="danger"
+      />
     </div>
   );
 }

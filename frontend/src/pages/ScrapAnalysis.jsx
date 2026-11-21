@@ -4,6 +4,8 @@ import KPICard from '../components/KPICard';
 import DataTable from '../components/DataTable';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
+import Toast from '../components/Toast';
+import ConfirmDialog from '../components/ConfirmDialog';
 import { api } from '../services/api';
 
 export default function ScrapAnalysis() {
@@ -11,6 +13,11 @@ export default function ScrapAnalysis() {
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  // Delete Scrap State
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, record: null });
+  const [deleting, setDeleting] = useState(false);
 
   const fetchScrapData = async () => {
     setLoading(true);
@@ -50,11 +57,44 @@ export default function ScrapAnalysis() {
       )
     },
     { key: 'employee', label: 'Operator', render: val => <span className="text-slate-500 text-[11px]">{val || '--'}</span> },
-    { key: 'remarks', label: 'Remarks / Notes', render: val => <span className="text-slate-500 text-[11px]">{val || '--'}</span> }
+    { key: 'remarks', label: 'Remarks / Notes', render: val => <span className="text-slate-500 text-[11px]">{val || '--'}</span> },
+    {
+      key: 'actions',
+      label: 'Action',
+      sortable: false,
+      render: (_, row) => (
+        <button
+          onClick={() => setDeleteConfirm({ isOpen: true, record: row })}
+          className="p-1.5 rounded-lg border border-slate-300 dark:border-slate-600 hover:bg-rose-50 text-slate-400 hover:text-rose-500 transition-colors"
+          title="Delete Scrap Record"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      )
+    }
   ];
+
+  const handleDeleteScrap = async () => {
+    if (!deleteConfirm.record) return;
+    setDeleting(true);
+    try {
+      const res = await api.delete(`/api/scrap/${deleteConfirm.record.scrap_id}`);
+      if (res.success) {
+        setToast({ type: 'success', message: 'Scrap record deleted from Google Sheets.' });
+        fetchScrapData();
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: err.message || 'Failed to delete scrap record.' });
+    } finally {
+      setDeleting(false);
+      setDeleteConfirm({ isOpen: false, record: null });
+    }
+  };
 
   return (
     <div className="space-y-6">
+      <Toast toast={toast} onClose={() => setToast(null)} />
+
       {/* Top Banner */}
       <div className="p-6 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/90 shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -118,6 +158,17 @@ export default function ScrapAnalysis() {
           pageSize={10}
         />
       )}
+
+      {/* Delete Scrap Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={deleteConfirm.isOpen}
+        title="Delete Scrap Record"
+        message={`Are you sure you want to delete this scrap record (${deleteConfirm.record?.scrap_id}) from Google Sheets?`}
+        onConfirm={handleDeleteScrap}
+        onCancel={() => setDeleteConfirm({ isOpen: false, record: null })}
+        confirmText={deleting ? "Deleting..." : "Yes, Delete Record"}
+        confirmVariant="danger"
+      />
     </div>
   );
 }

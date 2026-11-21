@@ -78,3 +78,12 @@ def get_scrap_summary(current_user):
         "net_material_consumption": round_display(total_input - total_scrap),
         "overall_wastage_percentage": round_display(overall_wastage)
     })
+
+@scrap_bp.route("/<scrap_id>", methods=["DELETE"])
+@director_required
+def delete_scrap_record(current_user, scrap_id):
+    deleted = sheets_client.delete_row_by_id("Scrap_Records", "scrap_id", scrap_id)
+    if not deleted:
+        return jsonify({"success": False, "error": "Scrap record not found."}), 404
+
+    return jsonify({"success": True, "message": f"Scrap record {scrap_id} deleted successfully."})

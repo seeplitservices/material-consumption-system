@@ -188,3 +188,22 @@ def update_user(current_user, user_id):
     )
 
     return jsonify({"success": True, "message": "User updated successfully."})
+
+@auth_bp.route("/users/<user_id>", methods=["DELETE"])
+@director_required
+def delete_user(current_user, user_id):
+    if user_id == current_user["user_id"]:
+        return jsonify({"success": False, "error": "Cannot delete your own account."}), 400
+
+    deleted = sheets_client.delete_row_by_id("Users", "user_id", user_id)
+    if not deleted:
+        return jsonify({"success": False, "error": "User not found."}), 404
+
+    record_audit_log(
+        user_id=current_user["user_id"],
+        action="DELETE_USER",
+        record_type="Users",
+        record_id=user_id,
+        new_value=f"User {user_id} deleted by Director"
+    )
+    return jsonify({"success": True, "message": "User deleted successfully."})

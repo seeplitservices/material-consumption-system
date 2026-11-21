@@ -172,11 +172,20 @@ function handleRequest(e, defaultMethod) {
         sheets_connected: true
       };
     } 
-    // Auth Routes
+    // Auth & Users Routes
     else if (endpoint === "auth/login") {
       responseData = handleLogin(body);
     } else if (endpoint === "auth/me") {
       responseData = handleAuthMe(params.token);
+    } else if (endpoint === "auth/logout") {
+      responseData = { success: true, message: "Logged out." };
+    } else if (endpoint === "auth/users") {
+      if (method === "GET") responseData = getUsers();
+      else if (method === "POST") responseData = createUser(body);
+    } else if (endpoint.startsWith("auth/users/")) {
+      const userId = endpoint.split("/")[2];
+      if (method === "DELETE") responseData = deleteUser(userId);
+      else if (method === "PUT") responseData = updateUser(userId, body);
     }
     // Materials Routes
     else if (endpoint === "materials") {
@@ -199,8 +208,10 @@ function handleRequest(e, defaultMethod) {
       responseData = clearAllStock();
     } else if (endpoint === "stock/delete-selected") {
       responseData = deleteSelectedStock(body);
-    } else if (endpoint === "stock/adjust") {
+    } else if (endpoint === "stock/adjust" || endpoint === "stock/adjustment") {
       responseData = recordStockAdjustment(body);
+    } else if (endpoint === "stock/configure-initial") {
+      responseData = configureInitialStock(body);
     } else if (endpoint.startsWith("stock/")) {
       const matId = endpoint.split("/")[1];
       if (method === "DELETE") responseData = deleteMaterialStock(matId);
@@ -217,6 +228,26 @@ function handleRequest(e, defaultMethod) {
     // Production Summary Routes
     else if (endpoint === "production") {
       responseData = getProductionSummary(params.date, params.start_date, params.end_date);
+    }
+    // Scrap Analytics Routes
+    else if (endpoint === "scrap") {
+      if (method === "GET") responseData = getScrapRecords(params);
+    } else if (endpoint === "scrap/summary") {
+      responseData = getScrapSummary(params);
+    } else if (endpoint.startsWith("scrap/")) {
+      const scrapId = endpoint.split("/")[1];
+      if (method === "DELETE") responseData = deleteScrapRecord(scrapId);
+    }
+    // Settings & Diagnostics Routes
+    else if (endpoint === "settings") {
+      if (method === "GET") responseData = getSettings();
+      else if (method === "POST") responseData = saveSettings(body);
+    } else if (endpoint === "settings/audit-logs") {
+      responseData = getAuditLogs(params);
+    } else if (endpoint === "settings/clear-data") {
+      responseData = clearAllData();
+    } else if (endpoint === "settings/test-sheets") {
+      responseData = testSheetsConnection();
     }
     // Dashboard Routes
     else if (endpoint === "dashboard/summary") {
@@ -380,6 +411,136 @@ function calculateMaterialWeight(body) {
   };
 }
 
+function addMaterial(body) {
+  const now = new Date().toISOString();
+  const name = (body.material_name || "").trim();
+  if (!name) return { success: false, error: "Material name is required." };
+
+  const materials = getSheetRows("Material_Master");
+  if (materials.some(m => String(m.material_name).trim().toLowerCase() === name.toLowerCase())) {
+    return { success: false, error: `Material "${name}" already exists.` };
+  }
+
+  const matType = body.material_type || "Standard";
+  const prefix = matType === "Rare" ? "MAT-R-" : "MAT-";
+  const matId = prefix + Math.random().toString(36).substring(2, 8).toUpperCase();
+
+  let wt = parseFloat(body.weight_per_sheet) || 0;
+  let l = body.length_mm !== undefined && body.length_mm !== null && body.length_mm !== "" ? parseFloat(body.length_mm) : null;
+  let w = body.width_mm !== undefined && body.width_mm !== null && body.width_mm !== "" ? parseFloat(body.width_mm) : null;
+  let t = body.thickness_mm !== undefined && body.thickness_mm !== null && body.thickness_mm !== "" ? parseFloat(body.thickness_mm) : null;
+  let d = body.density_coefficient !== undefined && body.density_coefficient !== null && body.density_coefficient !== "" ? parseFloat(body.density_coefficient) : 0.00000785;
+
+  if (l && w && t) {
+    wt = Math.round(l * w * t * d * 10000) / 10000;
+  } else if (body.manual_weight) {
+    wt = parseFloat(body.manual_weight) || wt;
+  }
+
+  const newMat = {
+    material_id: matId,
+    material_name: name,
+    category: body.category || "General",
+    material_type: matType,
+    length_mm: l,
+    width_mm: w,
+    thickness_mm: t,
+    density_coefficient: d,
+    weight_per_sheet: wt,
+    unit: body.unit || "Sheets",
+    is_active: "TRUE",
+    remarks: body.remarks || "",
+    created_at: now,
+    updated_at: now
+  };
+
+  appendSheetRow("Material_Master", newMat);
+
+  const opStock = parseFloat(body.opening_stock);
+  if (!isNaN(opStock) && opStock > 0) {
+    appendSheetRow("Material_Stock", {
+      stock_id: "INIT-" + matId,
+      date: now.slice(0, 10),
+      material_id: matId,
+      material_name: name,
+      opening_stock: opStock,
+      stock_received: 0,
+      punching_stock: 0,
+      closing_stock: opStock,
+      remarks: "Initial Stock Recorded on Registration",
+      updated_by: "User",
+      updated_at: now
+    });
+  }
+
+  return { success: true, material: newMat, message: `Material "${name}" created successfully in Google Sheets.` };
+}
+
+function updateMaterial(matId, body) {
+  const now = new Date().toISOString();
+  const materials = getSheetRows("Material_Master");
+  const target = materials.find(m => String(m.material_id) === String(matId));
+  if (!target) return { success: false, error: "Material not found." };
+
+  if (body.is_active === false || String(body.is_active).toUpperCase() === "FALSE") {
+    return deleteMaterial(matId);
+  }
+
+  const updated = Object.assign({}, target);
+  if (body.material_name) updated.material_name = String(body.material_name).trim();
+  if (body.category) updated.category = String(body.category).trim();
+  if (body.unit) updated.unit = body.unit;
+  if (body.remarks !== undefined) updated.remarks = body.remarks;
+
+  const l = body.length_mm !== undefined && body.length_mm !== null && body.length_mm !== "" ? parseFloat(body.length_mm) : target.length_mm;
+  const w = body.width_mm !== undefined && body.width_mm !== null && body.width_mm !== "" ? parseFloat(body.width_mm) : target.width_mm;
+  const t = body.thickness_mm !== undefined && body.thickness_mm !== null && body.thickness_mm !== "" ? parseFloat(body.thickness_mm) : target.thickness_mm;
+  const d = body.density_coefficient !== undefined && body.density_coefficient !== null && body.density_coefficient !== "" ? parseFloat(body.density_coefficient) : (target.density_coefficient || 0.00000785);
+
+  if (l && w && t) {
+    updated.length_mm = l;
+    updated.width_mm = w;
+    updated.thickness_mm = t;
+    updated.density_coefficient = d;
+    updated.weight_per_sheet = Math.round(l * w * t * d * 10000) / 10000;
+  } else if (body.manual_weight) {
+    updated.weight_per_sheet = parseFloat(body.manual_weight);
+  }
+  updated.updated_at = now;
+
+  updateSheetRow("Material_Master", "material_id", matId, updated);
+  return { success: true, material: updated, message: "Material updated successfully in Google Sheets." };
+}
+
+function deleteMaterial(matId) {
+  const materials = getSheetRows("Material_Master");
+  const target = materials.find(m => String(m.material_id) === String(matId));
+  const matName = target ? target.material_name : matId;
+
+  deleteSheetRow("Material_Master", "material_id", matId);
+
+  // Cascade delete all stock records for this material
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const stockSheet = ss.getSheetByName("Material_Stock");
+  if (stockSheet && stockSheet.getLastRow() > 1) {
+    const data = stockSheet.getDataRange().getValues();
+    const headers = data[0];
+    const matCol = headers.indexOf("material_id");
+    if (matCol !== -1) {
+      for (let i = data.length - 1; i >= 1; i--) {
+        if (String(data[i][matCol]) === String(matId)) {
+          stockSheet.deleteRow(i + 1);
+        }
+      }
+    }
+  }
+
+  return {
+    success: true,
+    message: `Material "${matName}" and its stock records permanently deleted from Google Sheets.`
+  };
+}
+
 function getStockInventory() {
   const mats = getSheetRows("Material_Master");
   const stockRows = getSheetRows("Material_Stock");
@@ -502,6 +663,112 @@ function deleteSelectedStock(body) {
     success: true,
     message: `Deleted stock records for ${matIds.length} materials.`,
     deleted_count: deletedCount
+  };
+}
+
+function recordStockAdjustment(body) {
+  const now = new Date().toISOString();
+  const today = now.slice(0, 10);
+  const matId = body.material_id;
+  const adjQty = parseFloat(body.adjustment_quantity);
+  const reason = (body.adjustment_reason || body.reason || "").trim();
+  const employee = body.employee || "Director";
+
+  if (!matId || isNaN(adjQty)) {
+    return { success: false, error: "Valid material ID and adjustment quantity are required." };
+  }
+
+  const materials = getSheetRows("Material_Master");
+  const mat = materials.find(m => String(m.material_id) === String(matId));
+  const matName = mat ? mat.material_name : matId;
+
+  // Find latest stock balance
+  const stockRows = getSheetRows("Material_Stock");
+  const matStocks = stockRows.filter(s => String(s.material_id) === String(matId));
+  let curClosing = 0;
+  if (matStocks.length > 0) {
+    const latest = matStocks[matStocks.length - 1];
+    curClosing = parseFloat(latest.closing_stock) || 0;
+  }
+
+  const newClosing = curClosing + adjQty;
+
+  // 1. Record in Stock_Adjustments
+  appendSheetRow("Stock_Adjustments", {
+    adjustment_id: "ADJ-" + Math.random().toString(36).substring(2, 8).toUpperCase(),
+    date: today,
+    material_id: matId,
+    material_name: matName,
+    adjustment_quantity: adjQty,
+    reason: reason,
+    authorized_by: employee,
+    created_at: now
+  });
+
+  // 2. Record in Material_Stock
+  appendSheetRow("Material_Stock", {
+    stock_id: "STK-ADJ-" + Math.random().toString(36).substring(2, 8).toUpperCase(),
+    date: today,
+    material_id: matId,
+    material_name: matName,
+    opening_stock: curClosing,
+    stock_received: adjQty > 0 ? adjQty : 0,
+    punching_stock: adjQty < 0 ? Math.abs(adjQty) : 0,
+    closing_stock: newClosing,
+    remarks: `Adjustment (${adjQty >= 0 ? '+' : ''}${adjQty}): ${reason}`,
+    updated_by: employee,
+    updated_at: now
+  });
+
+  return {
+    success: true,
+    message: `Stock adjustment for "${matName}" saved to Google Sheets. New balance: ${newClosing} sheets.`,
+    new_closing_stock: newClosing
+  };
+}
+
+function configureInitialStock(body) {
+  const now = new Date().toISOString();
+  const matId = body.material_id;
+  const initialQty = parseFloat(body.initial_stock);
+  const dateStr = body.date || now.slice(0, 10);
+
+  if (!matId || isNaN(initialQty)) {
+    return { success: false, error: "Valid material ID and initial stock quantity are required." };
+  }
+
+  const materials = getSheetRows("Material_Master");
+  const mat = materials.find(m => String(m.material_id) === String(matId));
+  const matName = mat ? mat.material_name : matId;
+
+  const stockRows = getSheetRows("Material_Stock");
+  const existing = stockRows.find(s => String(s.material_id) === String(matId));
+
+  const stockRecord = {
+    stock_id: existing ? existing.stock_id : "INIT-" + matId,
+    date: dateStr,
+    material_id: matId,
+    material_name: matName,
+    opening_stock: initialQty,
+    stock_received: 0,
+    punching_stock: 0,
+    closing_stock: initialQty,
+    remarks: "Initial Baseline Stock Configured",
+    updated_by: "Director",
+    updated_at: now
+  };
+
+  if (existing) {
+    updateSheetRow("Material_Stock", "stock_id", existing.stock_id, stockRecord);
+  } else {
+    appendSheetRow("Material_Stock", stockRecord);
+  }
+
+  return {
+    success: true,
+    message: `Initial stock configured for "${matName}": ${initialQty} sheets.`,
+    material_id: matId,
+    initial_stock: initialQty
   };
 }
 
@@ -658,8 +925,34 @@ function getDailyEntries(startDate, endDate, specificDate) {
 }
 
 function deleteDailyEntry(entryId) {
-  const success = deleteSheetRow("Daily_Entries", "entry_id", entryId);
-  return { success: success, message: "Transaction deleted." };
+  const entries = getSheetRows("Daily_Entries");
+  const target = entries.find(e => String(e.entry_id) === String(entryId));
+  if (!target) return { success: false, error: "Transaction not found." };
+
+  const matId = target.material_id;
+  const jobNo = target.job_number;
+
+  deleteSheetRow("Daily_Entries", "entry_id", entryId);
+
+  // Cascade delete from Material_Stock corresponding row
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const stockSheet = ss.getSheetByName("Material_Stock");
+  if (stockSheet && stockSheet.getLastRow() > 1) {
+    const data = stockSheet.getDataRange().getValues();
+    const headers = data[0];
+    const matCol = headers.indexOf("material_id");
+    const remCol = headers.indexOf("remarks");
+    for (let i = data.length - 1; i >= 1; i--) {
+      const rowMat = String(data[i][matCol]);
+      const rowRem = String(data[i][remCol] || "");
+      if (rowMat === String(matId) && jobNo && rowRem.includes(jobNo)) {
+        stockSheet.deleteRow(i + 1);
+        break;
+      }
+    }
+  }
+
+  return { success: true, message: `Transaction ${entryId} deleted from Google Sheets.` };
 }
 
 function updateDailyEntry(entryId, body) {
@@ -1058,5 +1351,213 @@ function getDashboardCharts(params) {
     top_5_scrap: topScrap,
     monthly_wastage: [],
     stock_comparison: stockComp
+  };
+}
+
+// ============================================================================
+// USER MANAGEMENT CONTROLLERS
+// ============================================================================
+
+function getUsers() {
+  const rows = getSheetRows("Users");
+  const safeUsers = rows.map(u => ({
+    user_id: u.user_id,
+    name: u.name,
+    email: u.email,
+    role: u.role || "Employee",
+    is_active: u.is_active === "TRUE" || u.is_active === true,
+    created_at: u.created_at ? String(u.created_at).split("T")[0] : ""
+  }));
+  return { success: true, count: safeUsers.length, users: safeUsers };
+}
+
+function createUser(body) {
+  const email = (body.email || "").trim().toLowerCase();
+  const name = (body.name || "").trim();
+  const password = body.password || "password123";
+  const role = body.role || "Employee";
+  const now = new Date().toISOString();
+
+  if (!email || !name) {
+    return { success: false, error: "Name and email are required." };
+  }
+
+  const users = getSheetRows("Users");
+  if (users.some(u => String(u.email).trim().toLowerCase() === email)) {
+    return { success: false, error: `A user with email "${email}" already exists.` };
+  }
+
+  const userId = "USR-" + Math.random().toString(36).substring(2, 8).toUpperCase();
+  const newUser = {
+    user_id: userId,
+    name: name,
+    email: email,
+    password_hash: password,
+    role: role,
+    is_active: "TRUE",
+    created_at: now
+  };
+
+  appendSheetRow("Users", newUser);
+  return {
+    success: true,
+    user: {
+      user_id: userId,
+      name: name,
+      email: email,
+      role: role,
+      is_active: true
+    },
+    message: `User account "${name}" created in Google Sheets.`
+  };
+}
+
+function updateUser(userId, body) {
+  const users = getSheetRows("Users");
+  const target = users.find(u => String(u.user_id) === String(userId));
+  if (!target) return { success: false, error: "User not found." };
+
+  const updated = Object.assign({}, target);
+  if (body.name) updated.name = String(body.name).trim();
+  if (body.role) updated.role = body.role;
+  if (body.is_active !== undefined) {
+    updated.is_active = (body.is_active === true || body.is_active === "TRUE") ? "TRUE" : "FALSE";
+  }
+  if (body.password) updated.password_hash = body.password;
+
+  updateSheetRow("Users", "user_id", userId, updated);
+  return { success: true, message: `User "${target.email}" updated in Google Sheets.` };
+}
+
+function deleteUser(userId) {
+  const deleted = deleteSheetRow("Users", "user_id", userId);
+  return { success: deleted, message: `User account deleted from Google Sheets.` };
+}
+
+// ============================================================================
+// SCRAP CONTROLLERS
+// ============================================================================
+
+function getScrapRecords(params) {
+  params = params || {};
+  let rows = getSheetRows("Scrap_Records");
+  if (params.date) rows = rows.filter(r => String(r.date).split("T")[0] === params.date);
+  if (params.start_date) rows = rows.filter(r => String(r.date).split("T")[0] >= params.start_date);
+  if (params.end_date) rows = rows.filter(r => String(r.date).split("T")[0] <= params.end_date);
+
+  const formatted = rows.map(r => {
+    const inWt = parseFloat(r.total_input_weight) || 0;
+    const scWt = parseFloat(r.scrap_weight) || 0;
+    const net = parseFloat(r.net_consumption) || Math.max(0, inWt - scWt);
+    const wast = inWt > 0 ? (scWt / inWt) * 100 : 0;
+    const dStr = r.date ? String(r.date).split("T")[0] : "";
+
+    return Object.assign({}, r, {
+      date: dStr,
+      total_input_weight: inWt,
+      total_input_weight_display: inWt > 0 ? inWt.toFixed(2) : "0.00",
+      scrap_weight: scWt,
+      scrap_weight_display: scWt > 0 ? scWt.toFixed(2) : "0.00",
+      net_consumption: net,
+      net_consumption_display: net > 0 ? net.toFixed(2) : "0.00",
+      wastage_percentage: Math.round(wast * 100) / 100,
+      wastage_percentage_display: wast > 0 ? (Math.round(wast * 100) / 100).toFixed(2) : "0.00"
+    });
+  });
+
+  formatted.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+  return { success: true, count: formatted.length, records: formatted };
+}
+
+function getScrapSummary(params) {
+  const recs = getScrapRecords(params).records;
+  let totalScrap = 0;
+  let totalInput = 0;
+  recs.forEach(r => {
+    totalScrap += parseFloat(r.scrap_weight) || 0;
+    totalInput += parseFloat(r.total_input_weight) || 0;
+  });
+
+  const overallWastage = totalInput > 0 ? (totalScrap / totalInput) * 100 : 0;
+  return {
+    success: true,
+    total_scrap_weight: (Math.round(totalScrap * 100) / 100).toFixed(2),
+    total_input_weight: (Math.round(totalInput * 100) / 100).toFixed(2),
+    net_material_consumption: (Math.round((totalInput - totalScrap) * 100) / 100).toFixed(2),
+    overall_wastage_percentage: (Math.round(overallWastage * 100) / 100).toFixed(2)
+  };
+}
+
+function deleteScrapRecord(scrapId) {
+  const deleted = deleteSheetRow("Scrap_Records", "scrap_id", scrapId);
+  return { success: deleted, message: `Scrap record deleted from Google Sheets.` };
+}
+
+// ============================================================================
+// SETTINGS & SYSTEM CONTROLLERS
+// ============================================================================
+
+function getSettings() {
+  const rows = getSheetRows("Settings");
+  const sMap = {};
+  rows.forEach(r => { sMap[r.setting_key] = r.setting_value; });
+
+  return {
+    success: true,
+    settings: {
+      baseline_date: sMap.baseline_date || "2026-11-01",
+      steel_density: parseFloat(sMap.steel_density) || 0.00000785,
+      shifts: ["Day", "Night"]
+    },
+    google_sheets: { is_connected: true, spreadsheet_id: SpreadsheetApp.getActiveSpreadsheet().getId() }
+  };
+}
+
+function saveSettings(body) {
+  const now = new Date().toISOString();
+  if (body.baseline_date) {
+    upsertSetting("baseline_date", String(body.baseline_date), now);
+  }
+  if (body.steel_density !== undefined) {
+    upsertSetting("steel_density", String(body.steel_density), now);
+  }
+  return { success: true, message: "Settings saved to Google Sheets." };
+}
+
+function upsertSetting(key, val, now) {
+  const rows = getSheetRows("Settings");
+  const match = rows.find(r => r.setting_key === key);
+  if (match) {
+    updateSheetRow("Settings", "setting_key", key, { setting_key: key, setting_value: val, updated_at: now });
+  } else {
+    appendSheetRow("Settings", { setting_key: key, setting_value: val, updated_at: now });
+  }
+}
+
+function getAuditLogs(params) {
+  const logs = getSheetRows("Audit_Log");
+  logs.sort((a, b) => String(b.timestamp).localeCompare(String(a.timestamp)));
+  const limit = params && params.limit ? parseInt(params.limit) : 50;
+  return { success: true, count: logs.length, logs: logs.slice(0, limit) };
+}
+
+function clearAllData() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheetsToClear = ["Daily_Entries", "Material_Stock", "Scrap_Records", "Production_Summary", "Stock_Adjustments"];
+  sheetsToClear.forEach(sName => {
+    const s = ss.getSheetByName(sName);
+    if (s && s.getLastRow() > 1) {
+      s.deleteRows(2, s.getLastRow() - 1);
+    }
+  });
+  return { success: true, message: "All transactions and stock records cleared from Google Sheets. Inventory reset to baseline." };
+}
+
+function testSheetsConnection() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  return {
+    success: true,
+    message: "Google Sheets connection active: " + ss.getName(),
+    status: { is_connected: true, spreadsheet_id: ss.getId() }
   };
 }
