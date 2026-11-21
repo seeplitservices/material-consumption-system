@@ -212,6 +212,12 @@ function handleRequest(e, defaultMethod) {
       if (method === "DELETE") responseData = deleteDailyEntry(entryId);
       else if (method === "PUT") responseData = updateDailyEntry(entryId, body);
     }
+    // Dashboard Routes
+    else if (endpoint === "dashboard/summary") {
+      responseData = getDashboardSummary(params);
+    } else if (endpoint === "dashboard/charts") {
+      responseData = getDashboardCharts(params);
+    }
     // Reports Routes
     else if (endpoint === "reports/custom-range") {
       responseData = getCustomRangeReport(params.start_date, params.end_date);
@@ -620,4 +626,189 @@ function restoreDefaultMaterials() {
   ]);
   sheet.getRange(2, 1, matRows.length, matRows[0].length).setValues(matRows);
   return { success: true, restored_count: matRows.length, materials: getMaterials().materials };
+}
+
+function resolveDateRange(filterType, customStart, customEnd) {
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+
+  if (filterType === "today") return { start: todayStr, end: todayStr };
+  if (filterType === "yesterday") {
+    const yest = new Date();
+    yest.setDate(yest.getDate() - 1);
+    const yStr = yest.toISOString().slice(0, 10);
+    return { start: yStr, end: yStr };
+  }
+  if (filterType === "7days") {
+    const past = new Date();
+    past.setDate(past.getDate() - 7);
+    return { start: past.toISOString().slice(0, 10), end: todayStr };
+  }
+  if (filterType === "this_month") {
+    const startM = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+    return { start: startM, end: todayStr };
+  }
+  if (filterType === "custom" && customStart && customEnd) {
+    return { start: customStart, end: customEnd };
+  }
+  const past30 = new Date();
+  past30.setDate(past30.getDate() - 30);
+  return { start: past30.toISOString().slice(0, 10), end: todayStr };
+}
+
+function getDashboardSummary(params) {
+  const filterType = params.filter || "today";
+  const dates = resolveDateRange(filterType, params.start_date, params.end_date);
+  const startDate = dates.start;
+  const endDate = dates.end;
+
+  const allEntries = getSheetRows("Daily_Entries");
+  const stockRows = getSheetRows("Material_Stock");
+
+  const filtered = allEntries.filter(e => {
+    const d = e.entry_date || "";
+    if (startDate && d < startDate) return false;
+    if (endDate && d > endDate) return false;
+    return true;
+  });
+
+  let totalSheets = 0;
+  let totalConsumed = 0;
+  let totalInput = 0;
+  let totalScrap = 0;
+  let totalCutbit = 0;
+
+  filtered.forEach(e => {
+    totalSheets += parseFloat(e.used_quantity) || 0;
+    totalConsumed += parseFloat(e.net_consumption) || 0;
+    totalInput += parseFloat(e.total_input_weight) || 0;
+    totalScrap += parseFloat(e.scrap_weight) || 0;
+    totalCutbit += parseFloat(e.cutbit_used) || 0;
+  });
+
+  const overallWastage = totalInput > 0 ? (totalScrap / totalInput) * 100 : 0;
+
+  const matStockMap = {};
+  stockRows.forEach(r => {
+    if (r.material_id && r.closing_stock !== undefined && r.closing_stock !== "" && r.closing_stock !== "Not Configured") {
+      matStockMap[r.material_id] = parseFloat(r.closing_stock) || 0;
+    }
+  });
+  const totalAvailStock = Object.values(matStockMap).reduce((a, b) => a + b, 0);
+
+  const sortedRecent = allEntries.slice(-10).reverse().map(e => ({
+    entry_id: e.entry_id,
+    entry_date: e.entry_date,
+    job_number: e.job_number,
+    shift: e.shift,
+    material_name: e.material_name,
+    used_quantity: parseFloat(e.used_quantity) || 0,
+    weight_per_sheet: parseFloat(e.weight_per_sheet) || 0,
+    total_input_weight: parseFloat(e.total_input_weight) || 0,
+    scrap_weight: parseFloat(e.scrap_weight) || 0,
+    wastage_percentage: parseFloat(e.wastage_percentage) || 0,
+    closing_stock: parseFloat(e.closing_stock) || 0,
+    employee: e.employee
+  }));
+
+  return {
+    success: true,
+    filter: { type: filterType, start_date: startDate, end_date: endDate },
+    kpis: {
+      total_sheets_punched: totalSheets,
+      total_material_consumed_kg: Math.round(totalConsumed * 100) / 100,
+      total_scrap_generated_kg: Math.round(totalScrap * 100) / 100,
+      overall_wastage_percentage: Math.round(overallWastage * 100) / 100,
+      total_cutbit_used: totalCutbit,
+      total_available_stock: totalAvailStock
+    },
+    recent_transactions: sortedRecent
+  };
+}
+
+function getDashboardCharts(params) {
+  const filterType = params.filter || "this_month";
+  const dates = resolveDateRange(filterType, params.start_date, params.end_date);
+  const startDate = dates.start;
+  const endDate = dates.end;
+
+  const allEntries = getSheetRows("Daily_Entries");
+  const materials = getSheetRows("Material_Master");
+  const stockRows = getSheetRows("Material_Stock");
+
+  const filtered = allEntries.filter(e => {
+    const d = e.entry_date || "";
+    if (startDate && d < startDate) return false;
+    if (endDate && d > endDate) return false;
+    return true;
+  });
+
+  const dailyMap = {};
+  filtered.forEach(e => {
+    const d = e.entry_date || "";
+    if (!dailyMap[d]) {
+      dailyMap[d] = { date: d, consumption_kg: 0, scrap_kg: 0, punching_sheets: 0, input: 0 };
+    }
+    dailyMap[d].consumption_kg += parseFloat(e.net_consumption) || 0;
+    dailyMap[d].scrap_kg += parseFloat(e.scrap_weight) || 0;
+    dailyMap[d].punching_sheets += parseFloat(e.used_quantity) || 0;
+    dailyMap[d].input += parseFloat(e.total_input_weight) || 0;
+  });
+
+  const dailyTrend = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date)).map(item => {
+    item.wastage_percentage = item.input > 0 ? Math.round((item.scrap_kg / item.input) * 10000) / 100 : 0;
+    item.consumption_kg = Math.round(item.consumption_kg * 100) / 100;
+    item.scrap_kg = Math.round(item.scrap_kg * 100) / 100;
+    return item;
+  });
+
+  const matMap = {};
+  filtered.forEach(e => {
+    const mid = e.material_id;
+    if (!matMap[mid]) {
+      matMap[mid] = {
+        material_id: mid,
+        material_name: e.material_name || mid,
+        consumed_kg: 0,
+        scrap_kg: 0,
+        sheets_used: 0
+      };
+    }
+    matMap[mid].consumed_kg += parseFloat(e.net_consumption) || 0;
+    matMap[mid].scrap_kg += parseFloat(e.scrap_weight) || 0;
+    matMap[mid].sheets_used += parseFloat(e.used_quantity) || 0;
+  });
+
+  const allMatList = Object.values(matMap).map(m => {
+    m.consumed_kg = Math.round(m.consumed_kg * 100) / 100;
+    m.scrap_kg = Math.round(m.scrap_kg * 100) / 100;
+    return m;
+  });
+
+  const topConsumed = allMatList.slice().sort((a, b) => b.consumed_kg - a.consumed_kg).slice(0, 5);
+  const topScrap = allMatList.slice().sort((a, b) => b.scrap_kg - a.scrap_kg).slice(0, 5);
+
+  const latestStock = {};
+  stockRows.forEach(s => {
+    if (s.material_id) latestStock[s.material_id] = s;
+  });
+
+  const stockComp = materials.slice(0, 8).map(m => {
+    const s = latestStock[m.material_id] || {};
+    return {
+      material_name: (m.material_name || "").split("(")[0].trim(),
+      opening_stock: parseFloat(s.opening_stock) || 0,
+      closing_stock: parseFloat(s.closing_stock) || 0
+    };
+  });
+
+  return {
+    success: true,
+    daily_trend: dailyTrend,
+    material_usage: allMatList,
+    top_5_consumed: topConsumed,
+    top_5_scrap: topScrap,
+    monthly_wastage: [],
+    stock_comparison: stockComp
+  };
 }

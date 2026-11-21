@@ -20,6 +20,7 @@ function AppContent() {
   const { user, loading, isDirector } = useAuth();
   const [currentPage, setCurrentPage] = useState(() => (isDirector ? 'dashboard' : 'daily-entry'));
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isCalcOpen, setIsCalcOpen] = useState(false);
   const [isRareModalOpen, setIsRareModalOpen] = useState(false);
 
@@ -34,9 +35,9 @@ function AppContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white">
-        <div className="w-10 h-10 border-4 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-xs font-medium text-slate-400">Loading Material Control System...</p>
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-800">
+        <div className="w-10 h-10 border-4 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+        <p className="mt-4 text-xs font-semibold text-slate-500">Loading Material Control System...</p>
       </div>
     );
   }
@@ -61,8 +62,8 @@ function AppContent() {
   const currentTitle = PAGE_TITLES[currentPage] || 'Material Control System';
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex transition-colors">
-      {/* Sidebar Navigation */}
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex transition-colors">
+      {/* Sidebar Navigation (with Mobile Drawer support) */}
       <Sidebar
         currentPage={currentPage}
         onNavigate={(page) => {
@@ -72,16 +73,23 @@ function AppContent() {
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
         isDirector={isDirector}
+        mobileOpen={mobileSidebarOpen}
+        onCloseMobile={() => setMobileSidebarOpen(false)}
       />
 
-      {/* Main Content Area */}
-      <div className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'pl-20' : 'pl-64'}`}>
+      {/* Main Content Area: pl-0 on mobile, md:pl-20 / md:pl-64 on desktop */}
+      <div
+        className={`w-full flex-1 flex flex-col min-h-screen transition-all duration-300 pl-0 ${
+          sidebarCollapsed ? 'md:pl-20' : 'md:pl-64'
+        }`}
+      >
         <Header
           pageTitle={currentTitle}
           onOpenCalculator={() => setIsCalcOpen(true)}
+          onToggleMobileSidebar={() => setMobileSidebarOpen(!mobileSidebarOpen)}
         />
 
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+        <main className="flex-1 p-3 sm:p-4 md:p-6 max-w-7xl w-full mx-auto overflow-x-hidden">
           {/* Operator views DailyEntry or HistoricalRecords */}
           {!isDirector ? (
             <>

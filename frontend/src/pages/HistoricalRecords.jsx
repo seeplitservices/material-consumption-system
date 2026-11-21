@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { History, Filter, Edit, Search, CheckCircle2, X, Trash2, AlertTriangle } from 'lucide-react';
+import { History, Filter, Edit, Search, CheckCircle2, X, Trash2, AlertTriangle, Printer, Download } from 'lucide-react';
 import DataTable from '../components/DataTable';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
@@ -7,6 +7,7 @@ import Toast from '../components/Toast';
 import ConfirmDialog from '../components/ConfirmDialog';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
+import { printPDFReport } from '../utils/exportUtils';
 
 export default function HistoricalRecords() {
   const { isDirector } = useAuth();
@@ -225,6 +226,33 @@ export default function HistoricalRecords() {
           title={`Archived Entries (${entries.length})`}
           exportFilename="historical_material_entries"
           pageSize={12}
+          actions={
+            <button
+              onClick={() => {
+                if (!entries.length) {
+                  alert('No entries available to print.');
+                  return;
+                }
+                const pdfColumns = [
+                  { key: 'entry_date', label: 'Date' },
+                  { key: 'job_number', label: 'Job Ref' },
+                  { key: 'shift', label: 'Shift' },
+                  { key: 'material_name', label: 'Material' },
+                  { key: 'opening_stock_display', label: 'Opening' },
+                  { key: 'used_quantity_display', label: 'Used' },
+                  { key: 'closing_stock_display', label: 'Closing' },
+                  { key: 'total_input_weight_display', label: 'Input (kg)' },
+                  { key: 'employee', label: 'Operator' }
+                ];
+                printPDFReport('Saravanan Electricals - Historical Material Punching Ledger', pdfColumns, entries);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-slate-900 hover:bg-slate-800 text-white shadow-2xs transition-colors"
+              title="Download / Print as PDF"
+            >
+              <Printer className="w-3.5 h-3.5 text-red-500" />
+              <span className="hidden sm:inline">PDF</span>
+            </button>
+          }
         />
       )}
 
