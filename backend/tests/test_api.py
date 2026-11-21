@@ -390,3 +390,23 @@ def test_overall_scrap_and_no_received(client):
     assert round(summary["total_scrap_weight"], 2) == 9.57
     assert round(summary["wastage_percentage"], 2) == 10.00
 
+def test_custom_range_report(client):
+    """
+    Test requirement:
+    - Download and query records on a custom date range (start_date to end_date).
+    - Summary metrics and filtered records return correctly.
+    """
+    dir_token = get_auth_token(client)
+    headers = {"Authorization": f"Bearer {dir_token}"}
+
+    # Query with date range
+    res = client.get("/api/reports/custom-range?start_date=2026-11-01&end_date=2026-11-30", headers=headers)
+    assert res.status_code == 200
+    data = res.get_json()
+    assert data["success"] is True
+    assert "summary" in data
+    assert "records" in data
+    assert "materials" in data
+    assert data["start_date"] == "2026-11-01"
+    assert data["end_date"] == "2026-11-30"
+
