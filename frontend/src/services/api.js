@@ -5,19 +5,49 @@
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 export async function apiRequest(endpoint, options = {}) {
-  const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
-  
   const token = localStorage.getItem('mcwms_token');
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...(options.headers || {})
-  };
+  let url;
+  let config = { ...options };
 
-  const config = {
-    ...options,
-    headers
-  };
+  // Support for Google Apps Script Web App backend
+  if (API_BASE_URL.includes('script.google.com')) {
+    const [pathPart, queryPart] = endpoint.split('?');
+    const cleanEndpoint = pathPart.replace(/^\/api\/?/, '').replace(/^\//, '');
+    const urlObj = new URL(API_BASE_URL);
+    urlObj.searchParams.set('endpoint', cleanEndpoint);
+    
+    if (queryPart) {
+      const qParams = new URLSearchParams(queryPart);
+      for (const [k, v] of qParams.entries()) {
+        urlObj.searchParams.set(k, v);
+      }
+    }
+    
+    if (token) {
+      urlObj.searchParams.set('token', token);
+    }
+
+    const method = (options.method || 'GET').toUpperCase();
+    if (method !== 'GET') {
+      urlObj.searchParams.set('http_method', method);
+      config.method = 'POST';
+      // Use text/plain to avoid CORS preflight limitations on Google Apps Script redirects
+      config.headers = {
+        'Content-Type': 'text/plain;charset=utf-8'
+      };
+    } else {
+      config.headers = {};
+    }
+    url = urlObj.toString();
+  } else {
+    // Standard Python Flask / Render / Localhost REST API
+    url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+    config.headers = {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+      ...(options.headers || {})
+    };
+  }
 
   try {
     const response = await fetch(url, config);
@@ -38,7 +68,7 @@ export async function apiRequest(endpoint, options = {}) {
     // Check if network failed or server is asleep (e.g. Render spin-up)
     if (err.name === 'TypeError' && err.message.includes('Failed to fetch')) {
       throw new Error(
-        'Unable to connect to the backend server. The Render service might be spinning up, or the network is unavailable.'
+        'Unable to connect to the backend server. The service might be starting up, or the network is unavailable.'
       );
     }
     throw err;
