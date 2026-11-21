@@ -410,3 +410,40 @@ def test_custom_range_report(client):
     assert data["start_date"] == "2026-11-01"
     assert data["end_date"] == "2026-11-30"
 
+def test_custom_operator_name_entry(client):
+    """
+    Test requirement:
+    - Operator / Person Name is entered per transaction and recorded as the actual person's name,
+      not defaulting to 'Data Entry Operator'.
+    """
+    op_token = get_operator_token(client)
+    headers = {"Authorization": f"Bearer {op_token}"}
+
+    payload = {
+        "entry_date": "2026-11-21",
+        "shift": "Day",
+        "job_number": "OPERATOR-NAME-TEST",
+        "employee_name": "Karthik Subramanian",
+        "total_scrap_weight": 2.5,
+        "rows": [
+            {
+                "material_id": "MAT-01",
+                "opening_stock": 70,
+                "used_quantity": 2
+            }
+        ]
+    }
+    res = client.post("/api/entries", json=payload, headers=headers)
+    assert res.status_code == 201
+    entry = res.get_json()["entries"][0]
+    assert entry["employee"] == "Karthik Subramanian"
+
+    # Also test editing the operator name
+    entry_id = entry["entry_id"]
+    edit_payload = {
+        "employee_name": "Suresh Kumar"
+    }
+    edit_res = client.put(f"/api/entries/{entry_id}", json=edit_payload, headers=headers)
+    assert edit_res.status_code == 200
+    assert edit_res.get_json()["entry"]["employee"] == "Suresh Kumar"
+

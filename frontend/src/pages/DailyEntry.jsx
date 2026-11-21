@@ -24,7 +24,10 @@ export default function DailyEntry({ onSaved }) {
   const [entryDate, setEntryDate] = useState(new Date().toISOString().slice(0, 10));
   const [shift, setShift] = useState('Day');
   const [jobNumber, setJobNumber] = useState('');
-  const [employeeName, setEmployeeName] = useState(user?.name || '');
+  const [employeeName, setEmployeeName] = useState(() => {
+    const defaultName = user?.name || '';
+    return defaultName === 'Data Entry Operator' ? '' : defaultName;
+  });
   const [generalRemarks, setGeneralRemarks] = useState('');
   const [totalScrapWeight, setTotalScrapWeight] = useState('');
 
@@ -360,6 +363,11 @@ export default function DailyEntry({ onSaved }) {
       return;
     }
 
+    if (!employeeName.trim()) {
+      setToast({ type: 'warning', message: 'Please enter the Operator / Person Name.' });
+      return;
+    }
+
     const negativeStockRows = rows.filter(r => r.closing_stock < 0);
     if (negativeStockRows.length > 0) {
       setToast({
@@ -375,6 +383,7 @@ export default function DailyEntry({ onSaved }) {
         entry_date: entryDate,
         shift,
         job_number: jobNumber,
+        employee_name: employeeName.trim(),
         total_scrap_weight: scrapWeightNum,
         remarks: generalRemarks,
         rows: rows.map(r => ({
@@ -484,15 +493,19 @@ export default function DailyEntry({ onSaved }) {
 
             <div>
               <label className="block font-medium text-slate-700 dark:text-slate-300 mb-1">
-                Operator Name *
+                Operator / Person Name *
               </label>
               <input
                 type="text"
+                placeholder="Enter operator name (e.g. Karthik, Suresh)..."
                 value={employeeName}
                 onChange={e => setEmployeeName(e.target.value)}
                 required
-                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:ring-1 focus:ring-sky-500"
               />
+              <span className="text-[10px] text-slate-400 mt-0.5 block">
+                Enter the name of the person operating / logging this entry
+              </span>
             </div>
 
             {/* Overall Scrap Weight Field for the Entire Batch / Shift */}

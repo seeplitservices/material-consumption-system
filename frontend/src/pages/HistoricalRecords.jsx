@@ -28,6 +28,7 @@ export default function HistoricalRecords() {
   const [selectedEntry, setSelectedEntry] = useState(null);
   const [editJobNumber, setEditJobNumber] = useState('');
   const [editShift, setEditShift] = useState('Day');
+  const [editEmployee, setEditEmployee] = useState('');
   const [editOpeningStock, setEditOpeningStock] = useState('');
   const [editUsedQty, setEditUsedQty] = useState('');
   const [editCutbit, setEditCutbit] = useState('');
@@ -61,6 +62,7 @@ export default function HistoricalRecords() {
     setSelectedEntry(entry);
     setEditJobNumber(entry.job_number || '');
     setEditShift(entry.shift || 'Day');
+    setEditEmployee(entry.employee || '');
     setEditOpeningStock(String(entry.opening_stock ?? 0));
     setEditUsedQty(String(entry.used_quantity ?? 0));
     setEditCutbit(String(entry.cutbit_used ?? 0));
@@ -84,6 +86,7 @@ export default function HistoricalRecords() {
       const payload = {
         job_number: editJobNumber.trim(),
         shift: editShift,
+        employee: editEmployee.trim(),
         opening_stock: opStockNum,
         used_quantity: usedQtyNum,
         cutbit_used: parseFloat(editCutbit || 0),
@@ -298,6 +301,19 @@ export default function HistoricalRecords() {
                     <option value="General">General Shift</option>
                   </select>
                 </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                  Operator / Person Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Karthik, Suresh..."
+                  value={editEmployee}
+                  onChange={e => setEditEmployee(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:ring-1 focus:ring-sky-500"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-3">

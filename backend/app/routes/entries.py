@@ -109,7 +109,9 @@ def create_daily_entry(current_user):
         return jsonify({"success": False, "error": "At least one material row is required."}), 400
 
     now = datetime.now(timezone.utc).isoformat()
-    employee_name = current_user.get("name", "Operator")
+    employee_name = (data.get("employee_name") or data.get("employee") or "").strip()
+    if not employee_name:
+        employee_name = current_user.get("name", "Operator")
 
     master_materials = {
         m["material_id"]: m
@@ -333,9 +335,11 @@ def update_daily_entry(current_user, entry_id):
     old_scrap = target.get("scrap_weight")
 
     updated = dict(target)
-    for field in ["job_number", "shift", "remarks"]:
+    for field in ["job_number", "shift", "remarks", "employee"]:
         if field in data:
             updated[field] = data[field]
+    if "employee_name" in data and data["employee_name"]:
+        updated["employee"] = data["employee_name"]
 
     if any(k in data for k in ["used_quantity", "scrap_weight", "weight_per_sheet", "opening_stock"]):
         op_stock = float(data.get("opening_stock", target.get("opening_stock", 0)))
