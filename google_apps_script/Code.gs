@@ -197,6 +197,8 @@ function handleRequest(e, defaultMethod) {
       else if (method === "DELETE") responseData = clearAllStock();
     } else if (endpoint === "stock/clear-all") {
       responseData = clearAllStock();
+    } else if (endpoint === "stock/delete-selected") {
+      responseData = deleteSelectedStock(body);
     } else if (endpoint === "stock/adjust") {
       responseData = recordStockAdjustment(body);
     } else if (endpoint.startsWith("stock/")) {
@@ -375,24 +377,124 @@ function getStockInventory() {
   const stockRows = getSheetRows("Material_Stock");
 
   const inventory = mats.map((m, idx) => {
-    const matStocks = stockRows.filter(s => s.material_id === m.material_id);
-    let closing = m.opening_stock;
+    const matStocks = stockRows.filter(s => String(s.material_id) === String(m.material_id));
+    let closing = null;
+    let opening = null;
+    let received = 0;
+    let used = 0;
+    let isConfigured = false;
+    let remarks = "";
+
     if (matStocks.length > 0) {
-      closing = matStocks[matStocks.length - 1].closing_stock;
+      const latest = matStocks[matStocks.length - 1];
+      const cl = latest.closing_stock;
+      if (cl !== undefined && cl !== null && cl !== "" && cl !== "Not Configured") {
+        closing = parseFloat(cl);
+        isConfigured = true;
+      }
+      const op = latest.opening_stock;
+      if (op !== undefined && op !== null && op !== "" && op !== "Not Configured") {
+        opening = parseFloat(op);
+      }
+      received = parseFloat(latest.stock_received) || 0;
+      used = parseFloat(latest.punching_stock) || 0;
+      remarks = latest.remarks || "";
     }
+
+    const wt = parseFloat(m.weight_per_sheet) || 0;
+    const usedNum = parseFloat(used) || 0;
+
     return {
-      sno: idx + 1,
+      s_no: idx + 1,
       material_id: m.material_id,
       material_name: m.material_name,
       category: m.category,
-      weight_per_sheet: m.weight_per_sheet,
-      opening_stock: m.opening_stock,
-      closing_stock: closing,
-      is_configured: closing !== "Not Configured"
+      weight_per_sheet: wt,
+      weight_per_sheet_display: wt > 0 ? wt.toFixed(2) : "0.00",
+      opening_stock: isConfigured ? opening : null,
+      opening_stock_display: isConfigured && opening !== null ? String(opening) : "Not Configured",
+      stock_received: received,
+      punching_stock: used,
+      closing_stock: isConfigured ? closing : null,
+      closing_stock_display: isConfigured && closing !== null ? String(closing) : "Not Configured",
+      total_used_weight: Math.round(usedNum * wt * 100) / 100,
+      total_used_weight_display: (usedNum * wt).toFixed(2),
+      is_configured: isConfigured,
+      remarks: remarks
     };
   });
 
-  return { success: true, stock: inventory };
+  return { success: true, count: inventory.length, stock: inventory };
+}
+
+function clearAllStock() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Material_Stock");
+  if (sheet && sheet.getLastRow() > 1) {
+    sheet.deleteRows(2, sheet.getLastRow() - 1);
+  }
+  return {
+    success: true,
+    message: "All Material stock records successfully deleted from backend sheet and UI."
+  };
+}
+
+function deleteMaterialStock(matId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Material_Stock");
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return { success: true, message: "No stock records to delete." };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const matIdCol = headers.indexOf("material_id");
+  if (matIdCol === -1) return { success: false, error: "Column not found." };
+
+  let deletedCount = 0;
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (String(data[i][matIdCol]) === String(matId)) {
+      sheet.deleteRow(i + 1);
+      deletedCount++;
+    }
+  }
+
+  return {
+    success: true,
+    message: `Deleted ${deletedCount} stock records for material ${matId}.`
+  };
+}
+
+function deleteSelectedStock(body) {
+  const matIds = (body.material_ids || []).map(id => String(id));
+  if (!matIds.length) {
+    return { success: false, error: "No materials selected." };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Material_Stock");
+  if (!sheet || sheet.getLastRow() <= 1) {
+    return { success: true, message: "No stock records to delete." };
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const matIdCol = headers.indexOf("material_id");
+  if (matIdCol === -1) return { success: false, error: "Column not found." };
+
+  let deletedCount = 0;
+  for (let i = data.length - 1; i >= 1; i--) {
+    if (matIds.includes(String(data[i][matIdCol]))) {
+      sheet.deleteRow(i + 1);
+      deletedCount++;
+    }
+  }
+
+  return {
+    success: true,
+    message: `Deleted stock records for ${matIds.length} materials.`,
+    deleted_count: deletedCount
+  };
 }
 
 function createDailyEntry(body) {

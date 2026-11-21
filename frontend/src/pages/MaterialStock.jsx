@@ -42,6 +42,8 @@ export default function MaterialStock() {
   // Deletion Confirm Dialog States
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
   const [deleteSingleConfirm, setDeleteSingleConfirm] = useState({ isOpen: false, material: null });
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [deleteBatchConfirm, setDeleteBatchConfirm] = useState(false);
   const [deletingStock, setDeletingStock] = useState(false);
 
   const fetchStock = async () => {
@@ -164,7 +166,60 @@ export default function MaterialStock() {
     }
   };
 
+  const handleToggleSelect = (matId) => {
+    setSelectedIds(prev => prev.includes(matId) ? prev.filter(id => id !== matId) : [...prev, matId]);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.length === stockList.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(stockList.map(s => s.material_id));
+    }
+  };
+
+  // Delete selected stock for multiple materials
+  const handleDeleteSelectedStock = async () => {
+    if (selectedIds.length === 0) return;
+    setDeletingStock(true);
+    try {
+      const res = await api.post('/api/stock/delete-selected', { material_ids: selectedIds });
+      if (res.success) {
+        setToast({ type: 'success', message: `${selectedIds.length} material stock record(s) deleted from backend sheet.` });
+        setSelectedIds([]);
+        fetchStock();
+      }
+    } catch (err) {
+      setToast({ type: 'error', message: err.message || 'Failed to delete selected material stock.' });
+    } finally {
+      setDeletingStock(false);
+      setDeleteBatchConfirm(false);
+    }
+  };
+
   const columns = [
+    ...(isDirector ? [{
+      key: 'select',
+      label: (
+        <input
+          type="checkbox"
+          checked={stockList.length > 0 && selectedIds.length === stockList.length}
+          onChange={handleSelectAll}
+          className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+          title="Select / Deselect All"
+        />
+      ),
+      sortable: false,
+      className: 'w-10 text-center',
+      render: (_, row) => (
+        <input
+          type="checkbox"
+          checked={selectedIds.includes(row.material_id)}
+          onChange={() => handleToggleSelect(row.material_id)}
+          className="rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer"
+        />
+      )
+    }] : []),
     { key: 's_no', label: 'S.No', className: 'w-12 text-center' },
     {
       key: 'material_name',
@@ -279,6 +334,30 @@ export default function MaterialStock() {
       </div>
 
       {error && <ErrorMessage error={error} onRetry={fetchStock} />}
+
+      {/* Selected Items Action Banner */}
+      {isDirector && selectedIds.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 rounded-xl text-sky-900 dark:text-sky-200 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-xs">
+              {selectedIds.length} material(s) selected
+            </span>
+            <button
+              onClick={() => setSelectedIds([])}
+              className="text-xs text-sky-600 dark:text-sky-400 hover:underline ml-2"
+            >
+              Clear selection
+            </button>
+          </div>
+          <button
+            onClick={() => setDeleteBatchConfirm(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-xs transition-colors"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Delete Selected Stock ({selectedIds.length})</span>
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <Loading message="Retrieving unified material stock balances from Google Sheets..." />
@@ -459,6 +538,17 @@ export default function MaterialStock() {
         onConfirm={handleDeleteSingleStock}
         onCancel={() => setDeleteSingleConfirm({ isOpen: false, material: null })}
         confirmText={deletingStock ? "Deleting..." : "Yes, Delete Stock"}
+        confirmVariant="danger"
+      />
+
+      {/* Confirm Dialog for Batch Material Stock Delete */}
+      <ConfirmDialog
+        isOpen={deleteBatchConfirm}
+        title="Delete Selected Stock Records"
+        message={`Are you sure you want to delete stock records for the ${selectedIds.length} selected material(s) from the Material_Stock sheet? This will reset their balances to unconfigured.`}
+        onConfirm={handleDeleteSelectedStock}
+        onCancel={() => setDeleteBatchConfirm(false)}
+        confirmText={deletingStock ? "Deleting..." : `Yes, Delete Selected (${selectedIds.length})`}
         confirmVariant="danger"
       />
     </div>

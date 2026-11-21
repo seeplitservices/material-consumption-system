@@ -324,6 +324,35 @@ def delete_all_material_stock(current_user):
         "message": "All Material stock records successfully deleted from backend sheet and UI."
     })
 
+@stock_bp.route("/delete-selected", methods=["POST", "DELETE"])
+@director_required
+def delete_selected_material_stock(current_user):
+    """
+    Director deletes stock records for multiple selected materials from Material_Stock.
+    """
+    data = request.get_json() or {}
+    mat_ids = data.get("material_ids", [])
+    if not mat_ids:
+        return jsonify({"success": False, "error": "No materials selected."}), 400
+
+    total_deleted = 0
+    for mid in mat_ids:
+        total_deleted += sheets_client.delete_rows_by_condition("Material_Stock", "material_id", mid)
+
+    record_audit_log(
+        user_id=current_user["user_id"],
+        action="DELETE_SELECTED_MATERIAL_STOCK",
+        record_type="Material_Stock",
+        record_id="batch",
+        new_value=f"Deleted stock records for {len(mat_ids)} materials ({total_deleted} rows)."
+    )
+
+    return jsonify({
+        "success": True,
+        "message": f"Successfully deleted stock records for {len(mat_ids)} selected materials.",
+        "deleted_count": total_deleted
+    })
+
 @stock_bp.route("/<material_id>", methods=["DELETE"])
 @director_required
 def delete_single_material_stock(current_user, material_id):
