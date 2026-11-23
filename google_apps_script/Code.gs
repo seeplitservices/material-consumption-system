@@ -175,6 +175,8 @@ function handleRequest(e, defaultMethod) {
     // Auth & Users Routes
     else if (endpoint === "auth/login") {
       responseData = handleLogin(body);
+    } else if (endpoint === "auth/operator-login") {
+      responseData = handleOperatorLogin(body);
     } else if (endpoint === "auth/me") {
       responseData = handleAuthMe(params.token);
     } else if (endpoint === "auth/restore-director") {
@@ -400,6 +402,37 @@ function handleLogin(body) {
   };
 }
 
+// Easy Sign-In for Shop Floor Data Entry Operators (no credentials required)
+function handleOperatorLogin(body) {
+  const opName = (body && body.name ? String(body.name).trim() : "") || "Data Entry Operator";
+  const users = getSheetRows("Users");
+  let opUser = users.find(u => u.role === "Employee" && String(u.is_active).toUpperCase() !== "FALSE");
+
+  if (!opUser) {
+    opUser = {
+      user_id: "USR-002",
+      name: opName,
+      email: "operator@factory.com",
+      role: "Employee",
+      is_active: "TRUE"
+    };
+  }
+
+  const role = "Employee";
+  const token = "TOKEN_" + opUser.user_id + "_" + role + "_" + new Date().getTime();
+
+  return {
+    success: true,
+    token: token,
+    user: {
+      user_id: opUser.user_id,
+      name: opName || opUser.name || "Data Entry Operator",
+      email: opUser.email || "operator@factory.com",
+      role: "Employee"
+    }
+  };
+}
+
 function handleAuthMe(token) {
   const users = getSheetRows("Users");
   if (!token) {
@@ -421,6 +454,13 @@ function handleAuthMe(token) {
     const isAdminOrDir = tokenStr.includes("Director") || tokenStr.includes("Admin") || tokenStr.includes("DIR");
     if (isAdminOrDir) {
       targetUser = users.find(u => (u.role === "Director" || u.role === "Admin") && String(u.is_active).toUpperCase() !== "FALSE");
+    } else if (tokenStr.includes("Employee")) {
+      targetUser = users.find(u => u.role === "Employee") || {
+        user_id: "USR-002",
+        name: "Data Entry Operator",
+        email: "operator@factory.com",
+        role: "Employee"
+      };
     }
   }
 

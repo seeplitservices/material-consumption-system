@@ -84,6 +84,44 @@ def login():
         }
     })
 
+@auth_bp.route("/operator-login", methods=["POST"])
+def operator_login():
+    data = request.get_json() or {}
+    op_name = data.get("name", "").strip() or "Data Entry Operator"
+
+    users = sheets_client.read_rows("Users")
+    target_user = None
+    for u in users:
+        if u.get("role") == "Employee" and u.get("is_active") in ("TRUE", "True", True, "1"):
+            target_user = u
+            break
+
+    if not target_user:
+        target_user = {
+            "user_id": "USR-002",
+            "name": op_name,
+            "email": "operator@factory.com",
+            "role": "Employee"
+        }
+
+    token = generate_jwt_token(
+        user_id=target_user.get("user_id", "USR-002"),
+        email=target_user.get("email", "operator@factory.com"),
+        name=op_name,
+        role="Employee"
+    )
+
+    return jsonify({
+        "success": True,
+        "token": token,
+        "user": {
+            "user_id": target_user.get("user_id", "USR-002"),
+            "name": op_name,
+            "email": target_user.get("email", "operator@factory.com"),
+            "role": "Employee"
+        }
+    })
+
 @auth_bp.route("/me", methods=["GET"])
 @token_required
 def get_current_user_profile(current_user):
