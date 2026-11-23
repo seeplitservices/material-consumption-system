@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Plus, Shield, User, Lock, Mail, CheckCircle2, X, Trash2, RotateCcw } from 'lucide-react';
+import { Users, Plus, Shield, User, Lock, Mail, CheckCircle2, X, Trash2 } from 'lucide-react';
 import DataTable from '../components/DataTable';
 import Loading from '../components/Loading';
 import ErrorMessage from '../components/ErrorMessage';
@@ -24,7 +24,6 @@ export default function UserManagement() {
   // Delete User State
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, user: null });
   const [deleting, setDeleting] = useState(false);
-  const [restoringDirector, setRestoringDirector] = useState(false);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -38,24 +37,6 @@ export default function UserManagement() {
       setError(err.message || 'Failed to load user accounts.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleRestoreDirector = async () => {
-    setRestoringDirector(true);
-    try {
-      const res = await api.post('/api/auth/restore-director');
-      if (res.success) {
-        setToast({
-          type: 'success',
-          message: 'Master Director account restored (director@factory.com / Director@123).'
-        });
-        fetchUsers();
-      }
-    } catch (err) {
-      setToast({ type: 'error', message: err.message || 'Failed to restore Director account.' });
-    } finally {
-      setRestoringDirector(false);
     }
   };
 
@@ -215,25 +196,13 @@ export default function UserManagement() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleRestoreDirector}
-            disabled={restoringDirector}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 hover:bg-purple-100 transition-colors shadow-xs disabled:opacity-50"
-            title="Restore default master Director account (director@factory.com / Director@123)"
-          >
-            <RotateCcw className={`w-3.5 h-3.5 ${restoringDirector ? 'animate-spin' : ''}`} />
-            <span>Restore Master Director</span>
-          </button>
-
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            <span>+ Add User Account</span>
-          </button>
-        </div>
+        <button
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold rounded-xl bg-sky-600 hover:bg-sky-500 text-white shadow-xs transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          <span>+ Add User Account</span>
+        </button>
       </div>
 
       {error && <ErrorMessage error={error} onRetry={fetchUsers} />}

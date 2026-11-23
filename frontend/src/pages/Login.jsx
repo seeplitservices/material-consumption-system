@@ -1,16 +1,13 @@
 import React, { useState } from 'react';
-import { Lock, Mail, ArrowRight, ShieldCheck, UserCheck, RotateCcw } from 'lucide-react';
+import { Lock, Mail, ArrowRight, ShieldCheck, UserCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { api } from '../services/api';
 
 export default function Login() {
   const { login } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -19,7 +16,6 @@ export default function Login() {
       return;
     }
     setError('');
-    setSuccessMsg('');
     setLoading(true);
     try {
       await login(email, password);
@@ -34,25 +30,6 @@ export default function Login() {
     setEmail(demoEmail);
     setPassword(demoPass);
     setError('');
-    setSuccessMsg('');
-  };
-
-  const handleRestoreDirector = async () => {
-    setRestoring(true);
-    setError('');
-    setSuccessMsg('');
-    try {
-      const res = await api.post('/api/auth/restore-director');
-      if (res.success) {
-        setEmail('director@factory.com');
-        setPassword('Director@123');
-        setSuccessMsg('Master Director account successfully restored in Google Sheets! You can now click "Sign In to System".');
-      }
-    } catch (err) {
-      setError(err.message || 'Failed to restore Director account.');
-    } finally {
-      setRestoring(false);
-    }
   };
 
   return (
@@ -93,12 +70,6 @@ export default function Login() {
           {error && (
             <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
               <span className="font-semibold">Error:</span> {error}
-            </div>
-          )}
-
-          {successMsg && (
-            <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-              <span className="font-semibold">Success:</span> {successMsg}
             </div>
           )}
 
@@ -181,18 +152,6 @@ export default function Login() {
                   <span>Data Entry User</span>
                 </div>
                 <span className="text-[10px] text-sky-600/80 font-medium">Daily Entry & History</span>
-              </button>
-            </div>
-
-            <div className="mt-3.5 text-center">
-              <button
-                type="button"
-                onClick={handleRestoreDirector}
-                disabled={restoring}
-                className="text-[11px] font-semibold text-purple-700 hover:text-purple-900 hover:underline inline-flex items-center gap-1.5 transition-colors disabled:opacity-50"
-              >
-                <RotateCcw className={`w-3 h-3 ${restoring ? 'animate-spin' : ''}`} />
-                <span>{restoring ? 'Restoring in Google Sheets...' : 'Restore Master Director Access (Emergency Recovery)'}</span>
               </button>
             </div>
           </div>
