@@ -177,6 +177,8 @@ function handleRequest(e, defaultMethod) {
       responseData = handleLogin(body);
     } else if (endpoint === "auth/me") {
       responseData = handleAuthMe(params.token);
+    } else if (endpoint === "auth/restore-director") {
+      responseData = restoreDirectorAccount();
     } else if (endpoint === "auth/logout") {
       responseData = { success: true, message: "Logged out." };
     } else if (endpoint === "auth/users") {
@@ -357,39 +359,123 @@ function deleteSheetRow(sheetName, idKey, idVal) {
 function handleLogin(body) {
   const email = (body.email || "").trim().toLowerCase();
   const password = body.password || "";
-  const users = getSheetRows("Users");
+  let users = getSheetRows("Users");
   
-  const user = users.find(u => String(u.email).trim().toLowerCase() === email);
-  if (!user || user.password_hash !== password) {
+  // Emergency Recovery for Master Director:
+  // If director@factory.com is used with Director@123, or if no Director/Admin account exists in Users sheet
+  let user = users.find(u => String(u.email).trim().toLowerCase() === email);
+  if (!user && email === "director@factory.com" && password === "Director@123") {
+    restoreDirectorAccount();
+    users = getSheetRows("Users");
+    user = users.find(u => String(u.email).trim().toLowerCase() === email);
+  }
+
+  if (!user) {
     return { success: false, error: "Invalid email or password." };
   }
 
+  // Check active status
+  if (user.is_active === false || String(user.is_active).toUpperCase() === "FALSE") {
+    return { success: false, error: "This user account is currently deactivated." };
+  }
+
+  // Password verification
+  if (String(user.password_hash) !== String(password)) {
+    return { success: false, error: "Invalid email or password." };
+  }
+
+  const role = user.role || "Employee";
+  // Token embeds user_id and role so auth state is preserved on page refresh
+  const token = "TOKEN_" + user.user_id + "_" + role + "_" + new Date().getTime();
+
   return {
     success: true,
-    token: "TOKEN_" + user.user_id + "_" + new Date().getTime(),
+    token: token,
     user: {
       user_id: user.user_id,
       name: user.name,
       email: user.email,
-      role: user.role
+      role: role
     }
   };
 }
 
 function handleAuthMe(token) {
   const users = getSheetRows("Users");
-  // Default to operator or director based on token prefix
-  const isDir = token && token.includes("DIR");
-  const user = users.find(u => isDir ? u.role === "Director" : u.role === "Employee") || users[0];
+  if (!token) {
+    return { success: false, error: "No token provided." };
+  }
+
+  const tokenStr = String(token);
+  const parts = tokenStr.split("_");
+  let targetUser = null;
+
+  // 1. Look up exact user by user_id from token: TOKEN_<user_id>_<role>_<timestamp>
+  if (parts.length >= 2) {
+    const userId = parts[1];
+    targetUser = users.find(u => String(u.user_id) === String(userId));
+  }
+
+  // 2. If not found by user_id, check role embedded in token
+  if (!targetUser) {
+    const isAdminOrDir = tokenStr.includes("Director") || tokenStr.includes("Admin") || tokenStr.includes("DIR");
+    if (isAdminOrDir) {
+      targetUser = users.find(u => (u.role === "Director" || u.role === "Admin") && String(u.is_active).toUpperCase() !== "FALSE");
+    }
+  }
+
+  // 3. Fallback to first active user if still unresolved
+  if (!targetUser) {
+    targetUser = users.find(u => String(u.is_active).toUpperCase() !== "FALSE") || users[0];
+  }
+
+  if (!targetUser) {
+    return { success: false, error: "User session expired or user not found." };
+  }
+
   return {
     success: true,
     user: {
-      user_id: user.user_id,
-      name: user.name,
-      email: user.email,
-      role: user.role
+      user_id: targetUser.user_id,
+      name: targetUser.name,
+      email: targetUser.email,
+      role: targetUser.role || "Employee"
     }
   };
+}
+
+function restoreDirectorAccount() {
+  const users = getSheetRows("Users");
+  const now = new Date().toISOString();
+  const existing = users.find(u => String(u.email).trim().toLowerCase() === "director@factory.com");
+
+  if (existing) {
+    updateSheetRow("Users", "user_id", existing.user_id, {
+      name: "Managing Director",
+      role: "Director",
+      password_hash: "Director@123",
+      is_active: "TRUE"
+    });
+    return {
+      success: true,
+      message: "Director account restored and reset successfully (director@factory.com / Director@123)."
+    };
+  } else {
+    const newDir = {
+      user_id: "USR-DIR",
+      name: "Managing Director",
+      email: "director@factory.com",
+      password_hash: "Director@123",
+      role: "Director",
+      is_active: "TRUE",
+      created_at: now
+    };
+    appendSheetRow("Users", newDir);
+    return {
+      success: true,
+      message: "Master Director account created in Google Sheets (director@factory.com / Director@123)."
+    };
+  }
 }
 
 function getMaterials() {

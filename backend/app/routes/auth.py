@@ -34,6 +34,20 @@ def login():
             target_user = u
             break
 
+    # Emergency auto-restore master Director account if deleted
+    if not target_user and email == "director@factory.com" and password == "Director@123":
+        now = datetime.now(timezone.utc).isoformat()
+        target_user = {
+            "user_id": "USR-DIR",
+            "name": "Managing Director",
+            "email": "director@factory.com",
+            "password_hash": generate_password_hash("Director@123"),
+            "role": "Director",
+            "is_active": "TRUE",
+            "created_at": now
+        }
+        sheets_client.append_row("Users", target_user)
+
     if not target_user:
         return jsonify({"success": False, "error": "Invalid email or password."}), 401
 
@@ -77,6 +91,36 @@ def get_current_user_profile(current_user):
         "success": True,
         "user": current_user
     })
+
+@auth_bp.route("/restore-director", methods=["POST"])
+def restore_director():
+    users = sheets_client.read_rows("Users")
+    existing = None
+    for u in users:
+        if u.get("email", "").strip().lower() == "director@factory.com":
+            existing = u
+            break
+
+    now = datetime.now(timezone.utc).isoformat()
+    if existing:
+        updated = dict(existing)
+        updated["role"] = "Director"
+        updated["password_hash"] = generate_password_hash("Director@123")
+        updated["is_active"] = "TRUE"
+        sheets_client.update_row_by_id("Users", "user_id", existing["user_id"], updated)
+    else:
+        new_dir = {
+            "user_id": "USR-DIR",
+            "name": "Managing Director",
+            "email": "director@factory.com",
+            "password_hash": generate_password_hash("Director@123"),
+            "role": "Director",
+            "is_active": "TRUE",
+            "created_at": now
+        }
+        sheets_client.append_row("Users", new_dir)
+
+    return jsonify({"success": True, "message": "Master Director account restored (director@factory.com / Director@123)."})
 
 @auth_bp.route("/logout", methods=["POST"])
 @token_required
